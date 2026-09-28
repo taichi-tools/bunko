@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = "0.5.2";
+  var APP_VERSION = "0.6.0";
   var INDEX_VERSION = 2;          // 索引の作り方を変えたら上げる(古い索引は作り直す)
   var MAX_HITS = 1000;
 
@@ -262,6 +262,38 @@
     return rest || title;
   }
 
+  /* 本棚の表示: 最近読んだ順 / 科目ごと(右上のボタンで切り替え、端末ごとに覚える) */
+  // 見出しを並べる順
+  var SUBJECTS = ["財務会計論", "管理会計論", "監査論", "企業法", "租税法", "経営学"];
+  // 書名から科目を決める順。別の科目の言葉を含みやすいものを先に見る
+  // (監査論の「財務諸表監査」、経営学の「経営財務」、管理会計論の「経営意思決定」など)
+  var SUBJECT_RULES = [
+    ["監査論", /監査/],
+    ["管理会計論", /管理会計|原価/],
+    ["経営学", /経営/],
+    ["租税法", /租税|税法|法人税|所得税|消費税/],
+    ["企業法", /企業法|会社法|商法|金融商品取引法|金商法/],
+    ["財務会計論", /財務|財表|簿記/]
+  ];
+  function subjectOf(title){
+    var t = title.normalize("NFKC");
+    for(var i = 0; i < SUBJECT_RULES.length; i++){ if(SUBJECT_RULES[i][1].test(t)) return SUBJECT_RULES[i][0]; }
+    return "その他";
+  }
+  var shelfMode = lsGet("bunko-shelf-mode", "recent");
+  function updateModeBtn(){
+    var b = $("mode-btn");
+    b.textContent = shelfMode === "subject" ? "🕘" : "🗂";
+    b.title = shelfMode === "subject" ? "最近読んだ順にする" : "科目ごとにする";
+  }
+  $("mode-btn").addEventListener("click", function(){
+    shelfMode = shelfMode === "subject" ? "recent" : "subject";
+    lsSet("bunko-shelf-mode", shelfMode);
+    updateModeBtn();
+    renderShelf();
+  });
+  updateModeBtn();
+
   function renderShelf(){
     return Promise.all([dbAll("books"), dbAll("covers")]).then(function(r){
       var books = r[0];
@@ -281,7 +313,7 @@
         return;
       }
       var titles = [];
-      books.forEach(function(b){
+      function addBook(b){
         var el = document.createElement("div");
         el.className = "book";
         var pct = (b.numPages && b.lastPage) ? Math.min(100, Math.round((b.lastPage / b.numPages) * 100)) : 0;
@@ -310,7 +342,24 @@
         el.addEventListener("contextmenu", function(e){ e.preventDefault(); });
         el.addEventListener("click", function(){ if(!longPressed) openBook(b.id); });
         shelf.appendChild(el);
-      });
+      }
+      if(shelfMode === "subject"){
+        // 科目ごと: 科目の見出しの下に、書名の順(テキスト1 → テキスト2 → 問題集)で並べる
+        var groups = {};
+        books.forEach(function(b){ var s = subjectOf(b.title); (groups[s] = groups[s] || []).push(b); });
+        SUBJECTS.concat(["その他"]).forEach(function(name){
+          var list = groups[name];
+          if(!list) return;
+          list.sort(function(a, b){ return a.title.normalize("NFKC").localeCompare(b.title.normalize("NFKC"), "ja", {numeric: true}); });
+          var h = document.createElement("div");
+          h.className = "shelf-head";
+          h.innerHTML = escapeHtml(name) + '<span>' + list.length + '冊</span>';
+          shelf.appendChild(h);
+          list.forEach(addBook);
+        });
+      } else {
+        books.forEach(addBook);
+      }
       titles.forEach(function(x){ fitTitle(x[0], x[1]); });
     });
   }
