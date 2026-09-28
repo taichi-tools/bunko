@@ -1,6 +1,6 @@
 {
-  "name": "文庫",
-  "short_name": "文庫",
+  "name": "DIGITAL教材",
+  "short_name": "DIGITAL教材",
   "description": "予備校テキスト用のPDFビューア",
   "lang": "ja",
   "start_url": "./",
