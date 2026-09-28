@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = "0.4.5";
+  var APP_VERSION = "0.5.0";
   var INDEX_VERSION = 2;          // 索引の作り方を変えたら上げる(古い索引は作り直す)
   var MAX_HITS = 1000;
 
@@ -24,7 +24,7 @@
      files: PDF本体(追加したときだけ書く)
      texts: 検索用の索引
      kv:    バックアップから読み込んだが、まだPDFがない本の情報など */
-  var DB_NAME = "bunko", DB_VER = 1;
+  var DB_NAME = "bunko", DB_VER = 2;   // 2: covers(表紙)を追加
   var dbPromise = null;
   function openDB(){
     if(dbPromise) return dbPromise;
@@ -32,7 +32,7 @@
       var r = indexedDB.open(DB_NAME, DB_VER);
       r.onupgradeneeded = function(){
         var db = r.result;
-        ["books","files","texts","kv"].forEach(function(n){
+        ["books","files","texts","kv","covers"].forEach(function(n){
           if(!db.objectStoreNames.contains(n)) db.createObjectStore(n, {keyPath:"id"});
         });
       };
@@ -58,10 +58,11 @@
   function dbAll(s){ return tx(s, "readonly", function(t){ return t.objectStore(s).getAll(); }); }
   function dbPut(s, rec){ return tx(s, "readwrite", function(t){ return t.objectStore(s).put(rec); }); }
   function dbDeleteBook(id){
-    return tx(["books","files","texts"], "readwrite", function(t){
+    return tx(["books","files","texts","covers"], "readwrite", function(t){
       t.objectStore("books").delete(id);
       t.objectStore("files").delete(id);
       t.objectStore("texts").delete(id);
+      t.objectStore("covers").delete(id);
     });
   }
 
@@ -185,9 +186,63 @@
   var fileInput = $("file-input");
   $("add-btn").addEventListener("click", function(){ fileInput.click(); });
 
+  /* 表紙: 1ページ目を小さな画像にして covers に保存する(本棚を開くたびに描き直さないため) */
+  var COVER_W = 360;
+  var coverUrls = [];
+  function makeCover(doc){
+    return doc.getPage(1).then(function(page){
+      var vp = page.getViewport({scale: COVER_W / page.getViewport({scale:1}).width});
+      var canvas = document.createElement("canvas");
+      canvas.width = Math.floor(vp.width);
+      canvas.height = Math.floor(vp.height);
+      return page.render({canvasContext: canvas.getContext("2d"), viewport: vp}).promise.then(function(){
+        return new Promise(function(res){ canvas.toBlob(res, "image/jpeg", 0.82); });
+      });
+    });
+  }
+  // 表紙がまだない本(表紙の機能より前に追加した本)は、本棚を開いたときに1冊ずつ作る
+  var coverQueue = Promise.resolve();
+  function backfillCover(b, box){
+    coverQueue = coverQueue.then(function(){
+      return dbGet("files", b.id).then(function(f){
+        if(!f) return null;
+        return loadDoc(f.data).then(function(doc){
+          return makeCover(doc).then(function(blob){ doc.destroy(); return blob; }, function(err){ doc.destroy(); throw err; });
+        });
+      }).then(function(blob){
+        if(!blob) return;
+        return dbPut("covers", {id: b.id, blob: blob}).then(function(){ showCover(box, blob); });
+      }).catch(function(err){ console.error(err); });
+    });
+  }
+  function showCover(box, blob){
+    var url = URL.createObjectURL(blob);
+    coverUrls.push(url);
+    var img = document.createElement("img");
+    img.alt = "";
+    img.src = url;
+    box.innerHTML = "";
+    box.appendChild(img);
+  }
+  // 書名が2行に収まらないときは、前を省略して後ろ(「テキスト2」など)を残す
+  function fitTitle(el, title){
+    el.textContent = title;
+    if(el.scrollHeight <= el.clientHeight + 1) return;
+    for(var i = 1; i < title.length; i++){
+      el.textContent = "…" + title.slice(i);
+      if(el.scrollHeight <= el.clientHeight + 1) return;
+    }
+  }
+
   function renderShelf(){
-    return dbAll("books").then(function(books){
-      books.sort(function(a,b){ return b.addedAt - a.addedAt; });
+    return Promise.all([dbAll("books"), dbAll("covers")]).then(function(r){
+      var books = r[0];
+      var covers = {};
+      r[1].forEach(function(c){ covers[c.id] = c.blob; });
+      // 最近読んだ順(まだ開いていない本は、追加した順でその後ろ)
+      books.sort(function(a,b){ return (b.lastOpenedAt || 0) - (a.lastOpenedAt || 0) || b.addedAt - a.addedAt; });
+      coverUrls.forEach(function(u){ URL.revokeObjectURL(u); });
+      coverUrls = [];
       shelf.innerHTML = "";
       if(books.length === 0){
         var e = document.createElement("div");
@@ -196,16 +251,21 @@
         shelf.appendChild(e);
         return;
       }
+      var titles = [];
       books.forEach(function(b){
         var el = document.createElement("div");
-        el.className = "spine";
-        el.style.background = "var(--spine-" + (b.color || 1) + ")";
+        el.className = "book";
         var pct = (b.numPages && b.lastPage) ? Math.min(100, Math.round((b.lastPage / b.numPages) * 100)) : 0;
-        var label = b.numPages ? ("全" + b.numPages + "ページ") : "読み込み失敗";
+        var label = !b.numPages ? "読み込み失敗" : (b.lastOpenedAt ? "p." + b.lastPage + " / " + b.numPages : "全" + b.numPages + "ページ");
         el.innerHTML =
-          '<div class="title">' + escapeHtml(b.title) + '</div>' +
-          '<div class="meta">' + label + '</div>' +
-          '<div class="progress"><i style="width:' + pct + '%"></i></div>';
+          '<div class="cover" style="background:var(--spine-' + (b.color || 1) + ')"></div>' +
+          '<div class="progress"><i style="width:' + pct + '%"></i></div>' +
+          '<div class="book-title"></div>' +
+          '<div class="book-meta">' + label + '</div>';
+        var box = el.querySelector(".cover");
+        if(covers[b.id]) showCover(box, covers[b.id]);
+        else if(b.numPages) backfillCover(b, box);
+        titles.push([el.querySelector(".book-title"), b.title]);
         var pressTimer = null, longPressed = false;
         function startPress(){
           longPressed = false;
@@ -222,6 +282,7 @@
         el.addEventListener("click", function(){ if(!longPressed) openBook(b.id); });
         shelf.appendChild(el);
       });
+      titles.forEach(function(x){ fitTitle(x[0], x[1]); });
     });
   }
 
@@ -312,8 +373,12 @@
     }).then(function(doc){
       var fp = (doc.fingerprints && doc.fingerprints[0]) || null;
       var numPages = doc.numPages;
-      doc.destroy();
-      return dbAll("books").then(function(books){
+      var cover = null;
+      return makeCover(doc).catch(function(err){ console.error(err); return null; }).then(function(blob){
+        cover = blob;
+        doc.destroy();
+        return dbAll("books");
+      }).then(function(books){
         if(fp && books.some(function(x){ return x.fingerprint === fp; })) return "dup";
         var title = file.name.replace(/\.pdf$/i, "");
         meta = {
@@ -323,9 +388,10 @@
           size: buf.byteLength, color: hashIndex(title, 6)
         };
         return applyPending(meta).then(function(){
-          return tx(["books","files"], "readwrite", function(t){
+          return tx(["books","files","covers"], "readwrite", function(t){
             t.objectStore("files").put({id: meta.id, data: buf});
             t.objectStore("books").put(meta);
+            if(cover) t.objectStore("covers").put({id: meta.id, blob: cover});
           });
         }).then(function(){ return "added"; });
       });

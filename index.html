@@ -74,14 +74,16 @@
   .icon-btn.active{background:var(--accent); color:#fff;}
   .icon-btn:disabled{opacity:.35;}
 
-  .shelf{flex:1; overflow-y:auto; padding:6px 20px 24px; display:grid; grid-template-columns:repeat(auto-fill,minmax(70px,1fr)); gap:16px; align-content:start;}
-  .spine{height:228px; border-radius:3px 3px 9px 9px; padding:16px 6px 10px; display:flex; box-shadow:var(--shadow); position:relative; cursor:pointer; border:1px solid rgba(0,0,0,0.18); transition:transform .12s ease; -webkit-tap-highlight-color:transparent; -webkit-touch-callout:none; user-select:none; -webkit-user-select:none;}
-  .spine:active{transform:scale(.96);}
-  .spine .title{writing-mode:vertical-rl; text-orientation:mixed; font-family:var(--font-serif); font-weight:700; font-size:15px; color:#F6F1E6; flex:1; overflow:hidden; letter-spacing:.03em;}
-  .spine .meta{position:absolute; left:6px; right:6px; bottom:20px; text-align:center; font-size:10px; color:rgba(246,241,230,0.8); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-  .spine .progress{position:absolute; left:0; right:0; bottom:0; height:4px; background:rgba(0,0,0,0.25);}
-  .spine .progress i{display:block; height:100%; background:#F6F1E6; opacity:.85;}
-
+  /* スマホの縦向きで1段に3冊、iPad で6冊前後 */
+  .shelf{flex:1; overflow-y:auto; padding:6px 20px 24px; display:grid; grid-template-columns:repeat(auto-fill,minmax(max(96px,15%),1fr)); gap:22px 16px; align-content:start;}
+  .book{cursor:pointer; -webkit-tap-highlight-color:transparent; -webkit-touch-callout:none; user-select:none; -webkit-user-select:none; transition:transform .12s ease; min-width:0;}
+  .book:active{transform:scale(.96);}
+  .cover{aspect-ratio:210/297; border-radius:3px; overflow:hidden; box-shadow:var(--shadow); border:1px solid var(--border);}
+  .cover img{display:block; width:100%; height:100%; object-fit:cover; background:#fff;}
+  .book .progress{height:3px; margin-top:6px; background:var(--border); border-radius:2px; overflow:hidden;}
+  .book .progress i{display:block; height:100%; background:var(--accent);}
+  .book-title{margin-top:7px; font-weight:700; font-size:14px; line-height:1.4; max-height:2.8em; overflow:hidden; word-break:break-all;}
+  .book-meta{margin-top:2px; font-size:11px; color:var(--ink-soft); font-variant-numeric:tabular-nums;}
   .empty-state{grid-column:1/-1; text-align:center; padding:80px 20px; color:var(--ink-soft);}
   .empty-state p{margin:6px 0;}
   .empty-state .big{font-family:var(--font-serif); font-size:17px; color:var(--ink);}
