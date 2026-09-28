@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = "0.2.1";
+  var APP_VERSION = "0.2.2";
   var INDEX_VERSION = 2;          // 索引の作り方を変えたら上げる(古い索引は作り直す)
   var MAX_HITS = 1000;
 
@@ -380,8 +380,6 @@
         currentDoc = doc;
         pageAnchor = Math.min(Math.max(1, meta.lastPage || 1), doc.numPages);
         if(spread) pageAnchor = spreadAnchor(pageAnchor);
-        pageSlider.max = doc.numPages;
-        pageSlider.value = pageAnchor;
         renderPages();
       }).catch(function(err){
         console.error(err);
@@ -429,7 +427,7 @@
     var count = pages.length, gap = 6;
     var dpr = window.devicePixelRatio || 1;
 
-    pageSlider.value = pageAnchor;
+    if(!sliderDrag || !sliderDrag.active) sliderSet(pageAnchor, numPages);
     pageIndicator.textContent = (pages.length === 2 ? pages[0] + "–" + pages[1] : pageAnchor) + " / " + numPages;
     saveProgress();
 
@@ -520,7 +518,59 @@
     goTo(pageAnchor);
   });
 
-  pageSlider.addEventListener("input", function(){ goTo(parseInt(pageSlider.value, 10) || 1); });
+  /* ページのスライダー
+     触れただけでは動かさず、指が横に動いたときだけページを動かす。
+     Android のジェスチャー(下の端から上へスワイプしてホームへ)で、ページが飛ばないようにするため。 */
+  var sliderThumb = $("slider-thumb"), sliderFill = $("slider-fill");
+  var sliderDrag = null, sliderRenderTimer = null;
+  function sliderSet(p, max){
+    var r = max > 1 ? (p - 1) / (max - 1) : 0;
+    sliderFill.style.width = (r * 100) + "%";
+    sliderThumb.style.left = "calc(10px + (100% - 20px) * " + r + ")";
+  }
+  function sliderPageAt(x){
+    var rect = pageSlider.getBoundingClientRect();
+    var r = Math.min(1, Math.max(0, (x - rect.left - 10) / Math.max(1, rect.width - 20)));
+    return 1 + Math.round(r * (currentDoc.numPages - 1));
+  }
+  pageSlider.addEventListener("pointerdown", function(e){
+    if(!currentDoc || e.button > 0) return;
+    sliderDrag = {id: e.pointerId, x: e.clientX, y: e.clientY, active: false, page: pageAnchor};
+  });
+  pageSlider.addEventListener("pointermove", function(e){
+    var d = sliderDrag;
+    if(!d || e.pointerId !== d.id || !currentDoc) return;
+    if(!d.active){
+      var dx = Math.abs(e.clientX - d.x), dy = Math.abs(e.clientY - d.y);
+      if(dy > 8 && dy >= dx){ sliderDrag = null; return; }   // 縦の動きは無視
+      if(dx <= 8) return;
+      d.active = true;
+      try{ pageSlider.setPointerCapture(e.pointerId); }catch(err){}
+      pageSlider.classList.add("dragging");
+    }
+    var p = sliderPageAt(e.clientX);
+    if(p === d.page) return;
+    d.page = p;
+    sliderSet(p, currentDoc.numPages);
+    pageIndicator.textContent = p + " / " + currentDoc.numPages;
+    // 動かしている間も、少し間引いてページを描く
+    if(!sliderRenderTimer){
+      sliderRenderTimer = setTimeout(function(){
+        sliderRenderTimer = null;
+        if(sliderDrag && sliderDrag.active) goTo(sliderDrag.page);
+      }, 200);
+    }
+  });
+  function sliderEnd(e){
+    var d = sliderDrag;
+    if(!d || e.pointerId !== d.id) return;
+    sliderDrag = null;
+    pageSlider.classList.remove("dragging");
+    clearTimeout(sliderRenderTimer); sliderRenderTimer = null;
+    if(d.active) goTo(d.page);
+  }
+  pageSlider.addEventListener("pointerup", sliderEnd);
+  pageSlider.addEventListener("pointercancel", sliderEnd);
 
   // スワイプ
   var touchStartX = null;

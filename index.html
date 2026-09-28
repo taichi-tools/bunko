@@ -98,8 +98,13 @@
   .load-msg{color:var(--ink-soft); font-size:14px; text-align:center; padding:0 30px; line-height:1.7;}
 
   .viewer-footer{background:var(--bg-elevated); border-top:1px solid var(--border); transition:transform .2s ease, opacity .2s ease;}
-  .footer-row{display:flex; align-items:center; gap:12px; padding:10px 18px;}
-  #page-slider{flex:1; accent-color:var(--accent);}
+  /* 下に余白を取り、画面の端(ホームへ戻るスワイプの場所)から離す */
+  .footer-row{display:flex; align-items:center; gap:12px; padding:8px 18px 22px;}
+  .slider{flex:1; position:relative; height:36px; touch-action:none; cursor:pointer; -webkit-tap-highlight-color:transparent;}
+  .slider-track{position:absolute; left:10px; right:10px; top:50%; height:4px; margin-top:-2px; background:var(--border); border-radius:2px; overflow:hidden;}
+  .slider-fill{height:100%; width:0; background:var(--accent);}
+  .slider-thumb{position:absolute; top:50%; left:10px; width:20px; height:20px; margin:-10px 0 0 -10px; border-radius:50%; background:var(--accent); box-shadow:0 1px 4px rgba(0,0,0,0.3); transition:transform .1s ease;}
+  .slider.dragging .slider-thumb{transform:scale(1.25);}
   .page-indicator{font-variant-numeric:tabular-nums; font-size:12px; color:var(--ink-soft); min-width:66px; text-align:right;}
   .hit-bar{display:none; align-items:center; gap:4px; padding:6px 10px 0 16px; font-size:13px;}
   .hit-bar.active{display:flex;}
@@ -184,7 +189,7 @@
         <button class="icon-btn" id="hit-clear" title="検索を終わる">×</button>
       </div>
       <div class="footer-row">
-        <input type="range" id="page-slider" min="1" max="1" value="1">
+        <div class="slider" id="page-slider" aria-label="ページ"><div class="slider-track"><div class="slider-fill" id="slider-fill"></div></div><div class="slider-thumb" id="slider-thumb"></div></div>
         <div class="page-indicator" id="page-indicator">1 / 1</div>
       </div>
     </footer>
