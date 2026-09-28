@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = "0.7.0";
+  var APP_VERSION = "0.7.1";
   var INDEX_VERSION = 2;          // 索引の作り方を変えたら上げる(古い索引は作り直す)
   var MAX_HITS = 1000;
 
@@ -575,7 +575,7 @@
     // 余白は付けず、画面いっぱいまで使う
     var containerW = pageArea.clientWidth;
     var containerH = pageArea.clientHeight;
-    var count = pages.length, gap = 6;
+    var count = pages.length, gap = 2;   // 見開きの2ページの間の線の太さ(index.html の .page-wrap の gap と同じにする)
     var dpr = window.devicePixelRatio || 1;
     var z = zoom;
 
