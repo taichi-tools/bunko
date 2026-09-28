@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = "0.8.0";
+  var APP_VERSION = "0.8.1";
   var INDEX_VERSION = 2;          // 索引の作り方を変えたら上げる(古い索引は作り直す)
   var MAX_HITS = 1000;
 
@@ -818,8 +818,29 @@
     var r = pageArea.getBoundingClientRect();
     return {x: t.clientX - r.left - r.width / 2, y: t.clientY - r.top - r.height / 2};
   }
+  /* 選択モードでも、1本指で見える位置を動かせるようにする。
+     ただし、選んだ範囲の端のつまみを動かしているとき(=選択を広げているとき)は動かさない。
+     つまみの動きは端末が扱っていてアプリからは見えないので、
+     「選んだ範囲の端の近くで触れた」か「指を動かしている間に選択が変わった」で見分ける。 */
+  var selVersion = 0;
+  document.addEventListener("selectionchange", function(){ selVersion++; });
+  function hasSelection(){
+    var s = window.getSelection();
+    return !!(s && s.rangeCount && !s.isCollapsed);
+  }
+  function nearSelectionEnd(t){
+    if(!hasSelection()) return false;
+    var rects = window.getSelection().getRangeAt(0).getClientRects();
+    if(!rects.length) return false;
+    var a = rects[0], b = rects[rects.length - 1];
+    var R = 44;
+    return (Math.abs(t.clientX - a.left) < R && t.clientY > a.top - R && t.clientY < a.bottom + R) ||
+           (Math.abs(t.clientX - b.right) < R && t.clientY > b.top - R && t.clientY < b.bottom + R);
+  }
+
   pageArea.addEventListener("touchstart", function(e){
-    if(!currentDoc || selectMode) return;
+    if(!currentDoc) return;
+    if(selectMode && e.touches.length === 1 && nearSelectionEnd(e.touches[0])){ gesture = null; return; }
     if(e.touches.length === 2){
       var a = areaPoint(e.touches[0]), b = areaPoint(e.touches[1]);
       gesture = {type: "pinch", z0: zoom, px0: panX, py0: panY,
@@ -827,11 +848,10 @@
       e.preventDefault();
     } else if(e.touches.length === 1 && !gesture){
       var t = e.touches[0];
-      gesture = {type: "one", x0: t.clientX, y0: t.clientY, px0: panX, py0: panY, moved: false, t0: Date.now()};
+      gesture = {type: "one", x0: t.clientX, y0: t.clientY, px0: panX, py0: panY, moved: false, t0: Date.now(), sel: selVersion};
     }
   }, {passive: false});
   pageArea.addEventListener("touchmove", function(e){
-    if(selectMode) return;
     var g = gesture;
     if(!g) return;
     if(g.type === "pinch" && e.touches.length >= 2){
@@ -849,6 +869,23 @@
       var t = e.touches[0];
       var dx = t.clientX - g.x0, dy = t.clientY - g.y0;
       if(Math.abs(dx) > 8 || Math.abs(dy) > 8) g.moved = true;
+      if(selectMode){
+        // 指を動かしている間に選択が変わった → 選択を広げている。動かした分を戻して、以後は動かさない
+        if(g.sel !== selVersion && hasSelection()){
+          panX = g.px0; panY = g.py0;
+          clampPan();
+          applyTransform();
+          gesture = null;
+          return;
+        }
+        // 端末の文字選択を邪魔しないよう、preventDefault はしない
+        if(isZoomed()){
+          panX = g.px0 + dx; panY = g.py0 + dy;
+          clampPan();
+          applyTransform();
+        }
+        return;
+      }
       if(isZoomed()){
         panX = g.px0 + dx; panY = g.py0 + dy;
         clampPan();
@@ -858,7 +895,6 @@
     }
   }, {passive: false});
   pageArea.addEventListener("touchend", function(e){
-    if(selectMode) return;
     var g = gesture;
     if(!g) return;
     if(g.type === "pinch"){
@@ -871,6 +907,11 @@
       return;
     }
     gesture = null;
+    // 選択モードでは、めくる・ダブルタップはしない(動かしたあとの描き直しだけ)
+    if(selectMode){
+      if(g.moved && isZoomed()) scheduleDetail();
+      return;
+    }
     var t = e.changedTouches[0];
     var dx = t.clientX - g.x0, dy = t.clientY - g.y0;
     if(g.moved){

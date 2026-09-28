@@ -56,7 +56,7 @@
   }
   *{box-sizing:border-box;}
   /* ボタンの連打をダブルタップの拡大と受け取らせない */
-  html{height:100%; touch-action:manipulation;}
+  html{height:100%; touch-action:manipulation; overscroll-behavior:none;}
   body{height:100%; margin:0; background:var(--bg-page); color:var(--ink); font-family:var(--font-sans); -webkit-font-smoothing:antialiased; overflow:hidden;}
   button{font-family:inherit;}
   #app{position:fixed; inset:0;}
