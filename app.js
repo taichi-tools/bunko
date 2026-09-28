@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = "0.9.0";
+  var APP_VERSION = "0.9.1";
   var INDEX_VERSION = 2;          // 索引の作り方を変えたら上げる(古い索引は作り直す)
   var MAX_HITS = 1000;
 
@@ -1528,7 +1528,7 @@
     if($("update-bar")) return;
     var bar = document.createElement("div");
     bar.id = "update-bar";
-    bar.innerHTML = '<span>新しい版があります</span><button class="update-go">タップで更新</button><button class="update-x" aria-label="閉じる">×</button>';
+    bar.innerHTML = '<span>新しいバージョンがあります</span><button class="update-go">更新</button><button class="update-x" aria-label="閉じる">×</button>';
     bar.querySelector(".update-go").addEventListener("click", function(){
       // 読んでいた本は、読み込み直したあとに開き直す
       var done = Promise.resolve();
