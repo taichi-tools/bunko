@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = "0.9.1";
+  var APP_VERSION = "0.9.2";
   var INDEX_VERSION = 2;          // 索引の作り方を変えたら上げる(古い索引は作り直す)
   var MAX_HITS = 1000;
 
@@ -1396,12 +1396,14 @@
         (e ? '<tr><td>保存容量(使用/上限の目安)</td><td>' + fmtMB(e.usage || 0) + ' / ' + fmtMB(e.quota || 0) + '</td></tr>' : '') +
         '<tr><td>データの保護</td><td>' + (p === true ? '有効' : p === false ? '無効(容量不足のとき消される可能性)' : '不明') + '</td></tr>' +
         '<tr><td>オフライン</td><td>' + (offline ? '準備完了' : '未準備') + '</td></tr>' +
-        '<tr><td>バージョン</td><td>' + APP_VERSION + '</td></tr>' +
         '</table>' +
         '<button class="modal-btn plain block" id="ms-export">バックアップを書き出す</button>' +
         '<button class="modal-btn plain block" id="ms-import">バックアップを読み込む</button>' +
         '<p class="note">バックアップに入るのは、書名・最後に読んだページ・表示の設定だけです。PDFは入りません。機種変更のときは、新しい端末でPDFを追加し、このファイルを読み込んでください(順番はどちらが先でもかまいません)。</p>' +
-        '<button class="modal-btn plain" id="ms-close" style="width:100%;">閉じる</button>',
+        '<button class="modal-btn plain" id="ms-close" style="width:100%;">閉じる</button>' +
+        '<div class="about"><div class="about-name">DIGITAL教材</div>' +
+        '<div>バージョン ' + APP_VERSION + '</div>' +
+        '<div>© 2026 taichi-tools</div></div>',
         function(sheet, close){
           sheet.querySelector("#ms-close").addEventListener("click", close);
           sheet.querySelector("#ms-export").addEventListener("click", function(){ exportBackup(); });
