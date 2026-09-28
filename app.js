@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = "0.3.0";
+  var APP_VERSION = "0.4.0";
   var INDEX_VERSION = 2;          // 索引の作り方を変えたら上げる(古い索引は作り直す)
   var MAX_HITS = 1000;
 
@@ -382,6 +382,7 @@
         currentDoc = doc;
         pageAnchor = Math.min(Math.max(1, meta.lastPage || 1), doc.numPages);
         if(spread) pageAnchor = spreadAnchor(pageAnchor);
+        resetZoom();
         renderPages();
       }).catch(function(err){
         console.error(err);
@@ -428,6 +429,7 @@
     var containerH = pageArea.clientHeight - 16;
     var count = pages.length, gap = 6;
     var dpr = window.devicePixelRatio || 1;
+    var z = zoom;
 
     if(!sliderDrag || !sliderDrag.active) sliderSet(pageAnchor, numPages);
     pageIndicator.textContent = (pages.length === 2 ? pages[0] + "–" + pages[1] : pageAnchor) + " / " + numPages;
@@ -437,7 +439,10 @@
       if(seq !== renderSeq) return;
       var baseVp = pageObjs[0].getViewport({scale:1});
       var widthBudget = (containerW - gap * (count - 1)) / count;
-      var scale = Math.min(widthBudget / baseVp.width, containerH / baseVp.height);
+      var fit = Math.min(widthBudget / baseVp.width, containerH / baseVp.height);
+      var scale = fit * z;
+      fitW = count * baseVp.width * fit + gap * (count - 1);
+      fitH = baseVp.height * fit;
 
       var frag = document.createDocumentFragment();
       var jobs = pageObjs.map(function(page, i){
@@ -446,9 +451,11 @@
         box.className = "pg";
         box.style.width = Math.floor(viewport.width) + "px";
         box.style.height = Math.floor(viewport.height) + "px";
+        // 大きく拡大したときは、端末のメモリに収まるよう解像度を抑える
+        var d = Math.min(dpr, Math.sqrt(MAX_CANVAS_PX / count / (viewport.width * viewport.height)));
         var canvas = document.createElement("canvas");
-        canvas.width = Math.floor(viewport.width * dpr);
-        canvas.height = Math.floor(viewport.height * dpr);
+        canvas.width = Math.floor(viewport.width * d);
+        canvas.height = Math.floor(viewport.height * d);
         canvas.style.width = Math.floor(viewport.width) + "px";
         canvas.style.height = Math.floor(viewport.height) + "px";
         var layer = document.createElement("div");
@@ -459,7 +466,7 @@
         var task = page.render({
           canvasContext: canvas.getContext("2d"),
           viewport: viewport,
-          transform: dpr !== 1 ? [dpr,0,0,dpr,0,0] : null
+          transform: d !== 1 ? [d,0,0,d,0,0] : null
         });
         runningTasks.push(task);
         if(activeQuery) drawHighlights(page, pages[i], viewport, layer, seq);
@@ -472,6 +479,9 @@
         pageWrap.innerHTML = "";
         pageWrap.appendChild(frag);
         pageWrap.classList.add("show");
+        renderedZoom = z;
+        clampPan();
+        applyTransform();
       }).catch(function(err){
         if(err && err.name === "RenderingCancelledException") return;
         console.error(err);
@@ -492,6 +502,7 @@
     if(!currentDoc) return;
     p = Math.min(Math.max(1, p), currentDoc.numPages);
     pageAnchor = spread ? spreadAnchor(p) : p;
+    resetZoom();
     renderPages();
   }
   function goNext(){
@@ -574,17 +585,108 @@
   pageSlider.addEventListener("pointerup", sliderEnd);
   pageSlider.addEventListener("pointercancel", sliderEnd);
 
-  // スワイプ
-  var touchStartX = null;
+  /* ---------- 拡大 ----------
+     ブラウザの拡大は止めて、アプリがページだけを拡大する。
+     ピンチ中は描いた画像を引き伸ばして見せ、指を離したらその倍率で描き直してくっきりさせる。
+     zoom: 見た目の倍率 / renderedZoom: 今の画像を描いた倍率 / panX, panY: 中央からのずれ(px) */
+  var MIN_ZOOM = 1, MAX_ZOOM = 4;
+  var MAX_CANVAS_PX = 16777216;
+  var zoom = 1, renderedZoom = 1, panX = 0, panY = 0, fitW = 0, fitH = 0;
+  function isZoomed(){ return zoom > 1.01; }
+  function applyTransform(){
+    var k = zoom / renderedZoom;
+    pageWrap.style.transform = "translate(" + panX + "px," + panY + "px)" + (k !== 1 ? " scale(" + k + ")" : "");
+    pageArea.classList.toggle("zoomed", isZoomed());
+  }
+  function clampPan(){
+    var mx = Math.max(0, (fitW * zoom - pageArea.clientWidth) / 2);
+    var my = Math.max(0, (fitH * zoom - pageArea.clientHeight) / 2);
+    panX = Math.min(mx, Math.max(-mx, panX));
+    panY = Math.min(my, Math.max(-my, panY));
+  }
+  function resetZoom(){ zoom = 1; panX = 0; panY = 0; }
+
+  // ページの上の指の操作: ピンチ=拡大、拡大中の1本指=位置を動かす、等倍のスワイプ=ページをめくる、ダブルタップ=等倍に戻す
+  var gesture = null, lastTap = null, suppressClickUntil = 0;
+  function areaPoint(t){
+    var r = pageArea.getBoundingClientRect();
+    return {x: t.clientX - r.left - r.width / 2, y: t.clientY - r.top - r.height / 2};
+  }
   pageArea.addEventListener("touchstart", function(e){
-    touchStartX = e.touches.length === 1 ? e.touches[0].clientX : null;
-  }, {passive:true});
+    if(!currentDoc) return;
+    if(e.touches.length === 2){
+      var a = areaPoint(e.touches[0]), b = areaPoint(e.touches[1]);
+      gesture = {type: "pinch", z0: zoom, px0: panX, py0: panY,
+        fx: (a.x + b.x) / 2, fy: (a.y + b.y) / 2, d0: Math.hypot(a.x - b.x, a.y - b.y) || 1};
+      e.preventDefault();
+    } else if(e.touches.length === 1 && !gesture){
+      var t = e.touches[0];
+      gesture = {type: "one", x0: t.clientX, y0: t.clientY, px0: panX, py0: panY, moved: false, t0: Date.now()};
+    }
+  }, {passive: false});
+  pageArea.addEventListener("touchmove", function(e){
+    var g = gesture;
+    if(!g) return;
+    if(g.type === "pinch" && e.touches.length >= 2){
+      var a = areaPoint(e.touches[0]), b = areaPoint(e.touches[1]);
+      var d = Math.hypot(a.x - b.x, a.y - b.y);
+      var fx = (a.x + b.x) / 2, fy = (a.y + b.y) / 2;
+      zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, g.z0 * d / g.d0));
+      // ピンチを始めたときに指の間にあった点が、今の指の間に来るように動かす
+      panX = fx - (zoom / g.z0) * (g.fx - g.px0);
+      panY = fy - (zoom / g.z0) * (g.fy - g.py0);
+      clampPan();
+      applyTransform();
+      e.preventDefault();
+    } else if(g.type === "one" && e.touches.length === 1){
+      var t = e.touches[0];
+      var dx = t.clientX - g.x0, dy = t.clientY - g.y0;
+      if(Math.abs(dx) > 8 || Math.abs(dy) > 8) g.moved = true;
+      if(isZoomed()){
+        panX = g.px0 + dx; panY = g.py0 + dy;
+        clampPan();
+        applyTransform();
+        e.preventDefault();
+      }
+    }
+  }, {passive: false});
   pageArea.addEventListener("touchend", function(e){
-    if(touchStartX === null) return;
-    var dx = e.changedTouches[0].clientX - touchStartX;
-    touchStartX = null;
-    if(Math.abs(dx) > 45){ if(dx < 0) goNext(); else goPrev(); }
+    var g = gesture;
+    if(!g) return;
+    if(g.type === "pinch"){
+      if(e.touches.length >= 2) return;
+      gesture = null;
+      suppressClickUntil = Date.now() + 400;
+      if(!isZoomed()) resetZoom();
+      if(zoom !== renderedZoom) renderPages();
+      else { clampPan(); applyTransform(); }
+      return;
+    }
+    gesture = null;
+    var t = e.changedTouches[0];
+    var dx = t.clientX - g.x0, dy = t.clientY - g.y0;
+    if(g.moved){
+      suppressClickUntil = Date.now() + 400;
+      if(!isZoomed() && Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy)){ if(dx < 0) goNext(); else goPrev(); }
+      lastTap = null;
+      return;
+    }
+    // ダブルタップ: 拡大しているときだけ等倍に戻す(拡大はしない)
+    var now = Date.now();
+    if(lastTap && now - lastTap.t < 320 && Math.hypot(t.clientX - lastTap.x, t.clientY - lastTap.y) < 30){
+      lastTap = null;
+      if(isZoomed()){ resetZoom(); renderPages(); }
+    } else {
+      lastTap = {t: now, x: t.clientX, y: t.clientY};
+    }
   });
+  pageArea.addEventListener("touchcancel", function(){ gesture = null; });
+
+  // ブラウザ自体の拡大を止める(iPad の Safari は viewport の指定を無視するため)
+  document.addEventListener("gesturestart", function(e){ e.preventDefault(); });
+  document.addEventListener("touchmove", function(e){
+    if(e.touches.length > 1) e.preventDefault();
+  }, {passive: false});
 
   // 中央タップで UI を隠す
   var uiHidden = false;
@@ -595,13 +697,14 @@
   }
   pageArea.addEventListener("click", function(e){
     if(e.target.closest(".nav-zone")) return;
+    if(Date.now() < suppressClickUntil) return;
     setUiHidden(!uiHidden);
   });
 
   var resizeTimer = null;
   window.addEventListener("resize", function(){
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(function(){ if(currentDoc) renderPages(); }, 150);
+    resizeTimer = setTimeout(function(){ if(currentDoc){ resetZoom(); renderPages(); } }, 150);
   });
 
   /* ---------- 目次(PDFに埋め込まれたアウトライン) ---------- */

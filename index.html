@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -52,7 +52,8 @@
     --spine-4:#48607F; --spine-5:#B08A3F; --spine-6:#7C5680;
   }
   *{box-sizing:border-box;}
-  html{height:100%;}
+  /* ボタンの連打をダブルタップの拡大と受け取らせない */
+  html{height:100%; touch-action:manipulation;}
   body{height:100%; margin:0; background:var(--bg-page); color:var(--ink); font-family:var(--font-sans); -webkit-font-smoothing:antialiased; overflow:hidden;}
   button{font-family:inherit;}
   #app{position:fixed; inset:0;}
@@ -85,7 +86,8 @@
   .viewer-title{flex:1; text-align:center; font-family:var(--font-serif); font-weight:700; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:0 4px;}
   .viewer-actions{display:flex; gap:2px;}
 
-  .page-area{flex:1; position:relative; overflow:hidden; background:var(--bg-page); display:flex; align-items:center; justify-content:center;}
+  .page-area{flex:1; position:relative; overflow:hidden; background:var(--bg-page); display:flex; align-items:center; justify-content:center; touch-action:none;}
+  .page-area.zoomed .nav-zone{pointer-events:none;}
   .page-wrap{display:flex; gap:6px; align-items:center; justify-content:center; opacity:0; transition:opacity .16s ease;}
   .page-wrap.show{opacity:1;}
   .pg{position:relative; box-shadow:0 3px 14px rgba(0,0,0,0.28); background:#fff;}
