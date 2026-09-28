@@ -60,6 +60,9 @@
   #app{position:fixed; inset:0;}
   .view{position:absolute; inset:var(--safe-top) 0 var(--safe-bottom) 0; display:none; flex-direction:column; background:var(--bg-page);}
   .view.active{display:flex;}
+  /* ビューアは画面の下端(iPad のホームバーの場所)までページを出す。下のバーだけ、その分を内側に空ける */
+  #view-viewer{bottom:0;}
+  #view-viewer .viewer-footer{padding-bottom:var(--safe-bottom);}
 
   /* ---------- 本棚 ---------- */
   .lib-header{display:flex; align-items:baseline; justify-content:space-between; padding:18px 20px;}
