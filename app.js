@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = "0.5.1";
+  var APP_VERSION = "0.5.2";
   var INDEX_VERSION = 2;          // 索引の作り方を変えたら上げる(古い索引は作り直す)
   var MAX_HITS = 1000;
 
@@ -244,9 +244,28 @@
     }
   }
 
+  /* 書名の頭の「27目標」: 本棚の全部の本が同じ年度のときだけ、表示から外す(本当の書名は変えない)。
+     年度が混ざっているときは、どれがどの年度か分かるように、そのまま出す。 */
+  var YEAR_RE = /^[\s　]*([0-9０-９]{2})[\s　]*目標[\s　_＿\-－・]*/;
+  var hiddenYear = null;
+  function yearOf(title){
+    var m = title.match(YEAR_RE);
+    return m ? m[1].normalize("NFKC") : null;
+  }
+  function updateHiddenYear(books){
+    var y = books.length ? yearOf(books[0].title) : null;
+    hiddenYear = (y && books.every(function(b){ return yearOf(b.title) === y; })) ? y : null;
+  }
+  function displayTitle(title){
+    if(!hiddenYear) return title;
+    var rest = title.replace(YEAR_RE, "");
+    return rest || title;
+  }
+
   function renderShelf(){
     return Promise.all([dbAll("books"), dbAll("covers")]).then(function(r){
       var books = r[0];
+      updateHiddenYear(books);
       var covers = {};
       r[1].forEach(function(c){ covers[c.id] = c.blob; });
       // 最近読んだ順(まだ開いていない本は、追加した順でその後ろ)
@@ -275,7 +294,7 @@
         var box = el.querySelector(".cover");
         if(covers[b.id]) showCover(box, covers[b.id]);
         else if(b.numPages) backfillCover(b, box);
-        titles.push([el.querySelector(".book-title"), b.title]);
+        titles.push([el.querySelector(".book-title"), displayTitle(b.title)]);
         var pressTimer = null, longPressed = false;
         function startPress(){
           longPressed = false;
@@ -443,7 +462,7 @@
       indexPromise = null;
       outlinePromise = null;
       clearHits();
-      $("viewer-title").textContent = meta.title;
+      $("viewer-title").textContent = displayTitle(meta.title);
       showView("viewer");
       pushUi("viewer");
       pageWrap.classList.remove("show");
