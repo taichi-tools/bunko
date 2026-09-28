@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="文庫">
+<meta name="theme-color" content="#F2EEE3" id="theme-color-meta">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<title>文庫</title>
+<style>
+  :root{
+    --bg-page:#F2EEE3;
+    --bg-elevated:#FFFFFF;
+    --ink:#21262B;
+    --ink-soft:#6B6558;
+    --accent:#9C7A33;
+    --accent-strong:#7C5F26;
+    --border:rgba(33,38,43,0.14);
+    --shadow:0 10px 22px rgba(33,38,43,0.14);
+    --danger:#9C3B32;
+    --hl:rgba(255,196,0,0.38);
+    --hl-cur:rgba(255,120,0,0.55);
+
+    --spine-1:#2F5D62; --spine-2:#7A3244; --spine-3:#33513B;
+    --spine-4:#2C3E55; --spine-5:#8C6D2F; --spine-6:#5B3A5C;
+
+    --font-serif:"Hiragino Mincho ProN","Yu Mincho","Noto Serif CJK JP","Noto Serif JP",serif;
+    --font-sans:"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic","Noto Sans CJK JP","Noto Sans JP",sans-serif;
+
+    --safe-top:env(safe-area-inset-top,0px);
+    --safe-bottom:env(safe-area-inset-bottom,0px);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg-page:#14181D; --bg-elevated:#1C232B; --ink:#ECE6D8; --ink-soft:#A79E8C;
+      --accent:#C9A24B; --accent-strong:#E4C06B; --border:rgba(236,230,216,0.16);
+      --shadow:0 12px 26px rgba(0,0,0,0.5); --danger:#D97B70;
+      --spine-1:#3E7B81; --spine-2:#A34A5C; --spine-3:#4C7457;
+      --spine-4:#48607F; --spine-5:#B08A3F; --spine-6:#7C5680;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg-page:#14181D; --bg-elevated:#1C232B; --ink:#ECE6D8; --ink-soft:#A79E8C;
+    --accent:#C9A24B; --accent-strong:#E4C06B; --border:rgba(236,230,216,0.16);
+    --shadow:0 12px 26px rgba(0,0,0,0.5); --danger:#D97B70;
+    --spine-1:#3E7B81; --spine-2:#A34A5C; --spine-3:#4C7457;
+    --spine-4:#48607F; --spine-5:#B08A3F; --spine-6:#7C5680;
+  }
+  *{box-sizing:border-box;}
+  html{height:100%;}
+  body{height:100%; margin:0; background:var(--bg-page); color:var(--ink); font-family:var(--font-sans); -webkit-font-smoothing:antialiased; overflow:hidden;}
+  button{font-family:inherit;}
+  #app{position:fixed; inset:0;}
+  .view{position:absolute; inset:var(--safe-top) 0 var(--safe-bottom) 0; display:none; flex-direction:column; background:var(--bg-page);}
+  .view.active{display:flex;}
+
+  /* ---------- 本棚 ---------- */
+  .lib-header{display:flex; align-items:baseline; justify-content:space-between; padding:18px 20px;}
+  .lib-header h1{font-family:var(--font-serif); font-weight:700; font-size:23px; margin:0; letter-spacing:.04em;}
+  .header-actions{display:flex; gap:4px; align-items:center;}
+  .icon-btn{background:none; border:none; color:var(--ink); font-size:19px; line-height:1; padding:9px; border-radius:8px; cursor:pointer; min-width:40px;}
+  .icon-btn:active{background:var(--border);}
+  .icon-btn.active{background:var(--accent); color:#fff;}
+  .icon-btn:disabled{opacity:.35;}
+
+  .shelf{flex:1; overflow-y:auto; padding:6px 20px 24px; display:grid; grid-template-columns:repeat(auto-fill,minmax(70px,1fr)); gap:16px; align-content:start;}
+  .spine{height:228px; border-radius:3px 3px 9px 9px; padding:16px 6px 10px; display:flex; box-shadow:var(--shadow); position:relative; cursor:pointer; border:1px solid rgba(0,0,0,0.18); transition:transform .12s ease; -webkit-tap-highlight-color:transparent; -webkit-touch-callout:none; user-select:none; -webkit-user-select:none;}
+  .spine:active{transform:scale(.96);}
+  .spine .title{writing-mode:vertical-rl; text-orientation:mixed; font-family:var(--font-serif); font-weight:700; font-size:15px; color:#F6F1E6; flex:1; overflow:hidden; letter-spacing:.03em;}
+  .spine .meta{position:absolute; left:6px; right:6px; bottom:20px; text-align:center; font-size:10px; color:rgba(246,241,230,0.8); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .spine .progress{position:absolute; left:0; right:0; bottom:0; height:4px; background:rgba(0,0,0,0.25);}
+  .spine .progress i{display:block; height:100%; background:#F6F1E6; opacity:.85;}
+
+  .empty-state{grid-column:1/-1; text-align:center; padding:80px 20px; color:var(--ink-soft);}
+  .empty-state p{margin:6px 0;}
+  .empty-state .big{font-family:var(--font-serif); font-size:17px; color:var(--ink);}
+
+  /* ---------- ビューア ---------- */
+  .viewer-header{display:flex; align-items:center; gap:6px; padding:10px 8px; background:var(--bg-elevated); border-bottom:1px solid var(--border); z-index:3; transition:transform .2s ease, opacity .2s ease;}
+  .viewer-title{flex:1; text-align:center; font-family:var(--font-serif); font-weight:700; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:0 4px;}
+  .viewer-actions{display:flex; gap:2px;}
+
+  .page-area{flex:1; position:relative; overflow:hidden; background:var(--bg-page); display:flex; align-items:center; justify-content:center;}
+  .page-wrap{display:flex; gap:6px; align-items:center; justify-content:center; opacity:0; transition:opacity .16s ease;}
+  .page-wrap.show{opacity:1;}
+  .pg{position:relative; box-shadow:0 3px 14px rgba(0,0,0,0.28); background:#fff;}
+  .pg canvas{display:block;}
+  .hl-layer{position:absolute; inset:0; pointer-events:none;}
+  .hl-layer i{position:absolute; background:var(--hl); border-radius:2px; mix-blend-mode:multiply;}
+  .hl-layer i.cur{background:var(--hl-cur); outline:2px solid rgba(255,120,0,0.9);}
+  .nav-zone{position:absolute; top:0; bottom:0; width:22%; background:transparent; border:none; padding:0; -webkit-tap-highlight-color:transparent;}
+  .nav-prev{left:0;} .nav-next{right:0;}
+  .load-msg{color:var(--ink-soft); font-size:14px; text-align:center; padding:0 30px; line-height:1.7;}
+
+  .viewer-footer{background:var(--bg-elevated); border-top:1px solid var(--border); transition:transform .2s ease, opacity .2s ease;}
+  .footer-row{display:flex; align-items:center; gap:12px; padding:10px 18px;}
+  #page-slider{flex:1; accent-color:var(--accent);}
+  .page-indicator{font-variant-numeric:tabular-nums; font-size:12px; color:var(--ink-soft); min-width:66px; text-align:right;}
+  .hit-bar{display:none; align-items:center; gap:4px; padding:6px 10px 0 16px; font-size:13px;}
+  .hit-bar.active{display:flex;}
+  .hit-bar .hit-q{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--accent-strong); font-weight:700;}
+  .hit-bar .hit-count{font-variant-numeric:tabular-nums; color:var(--ink-soft); font-size:12px; margin-right:4px;}
+  .hit-bar .icon-btn{font-size:15px; padding:7px;}
+  .viewer-header.hidden-ui{transform:translateY(-120%); opacity:0; pointer-events:none;}
+  .viewer-footer.hidden-ui{transform:translateY(120%); opacity:0; pointer-events:none;}
+
+  /* ---------- 検索 ---------- */
+  .overlay{position:fixed; inset:0; background:var(--bg-page); z-index:20; display:none; flex-direction:column; padding-top:var(--safe-top);}
+  .overlay.active{display:flex;}
+  .search-bar{display:flex; align-items:center; gap:8px; padding:12px 16px;}
+  #search-input{flex:1; font-size:16px; padding:11px 13px; border-radius:8px; border:1px solid var(--border); background:var(--bg-elevated); color:var(--ink); font-family:var(--font-sans);}
+  .search-status{padding:2px 18px 8px; font-size:12px; color:var(--ink-soft); min-height:16px;}
+  .search-results{list-style:none; margin:0; padding:0 16px calc(16px + var(--safe-bottom)); overflow-y:auto; flex:1;}
+  .search-results li{padding:13px 0; border-bottom:1px solid var(--border); cursor:pointer;}
+  .search-results li .snip{font-size:14px; line-height:1.7; word-break:break-all;}
+  .search-results li .snip b{color:var(--accent-strong); font-weight:700; background:var(--hl);}
+  .search-results li .pg-no{font-size:11px; color:var(--ink-soft); margin-top:5px;}
+
+  /* ---------- シート ---------- */
+  .modal-back{position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:30; display:none; align-items:flex-end; justify-content:center;}
+  .modal-back.active{display:flex;}
+  .modal-sheet{background:var(--bg-elevated); width:100%; max-width:480px; border-radius:16px 16px 0 0; padding:20px 20px calc(20px + var(--safe-bottom)); box-shadow:0 -8px 30px rgba(0,0,0,0.3);}
+  .modal-sheet h2{font-family:var(--font-serif); font-size:17px; margin:0 0 14px;}
+  .modal-sheet input[type=text]{width:100%; padding:11px 12px; font-size:16px; border-radius:8px; border:1px solid var(--border); background:var(--bg-page); color:var(--ink); font-family:inherit; margin-bottom:14px;}
+  .modal-row{display:flex; gap:10px;}
+  .modal-btn{flex:1; padding:12px; border-radius:9px; border:none; font-size:14px; font-weight:700; cursor:pointer; font-family:inherit;}
+  .modal-btn.primary{background:var(--accent); color:#fff;}
+  .modal-btn.danger{background:var(--danger); color:#fff;}
+  .modal-btn.plain{background:var(--border); color:var(--ink);}
+  .modal-btn.block{display:block; width:100%; margin-bottom:10px;}
+  .info-table{width:100%; border-collapse:collapse; font-size:13px; margin:4px 0 16px;}
+  .info-table td{padding:7px 0; border-bottom:1px solid var(--border);}
+  .info-table td:last-child{text-align:right; color:var(--ink-soft);}
+  .note{font-size:12px; color:var(--ink-soft); line-height:1.6; margin:-4px 0 14px;}
+
+  .toast{position:fixed; left:50%; bottom:calc(28px + var(--safe-bottom)); transform:translateX(-50%); background:var(--ink); color:var(--bg-page); padding:11px 18px; border-radius:20px; font-size:13px; z-index:40; opacity:0; pointer-events:none; transition:opacity .25s ease; max-width:90vw; text-align:center;}
+  .toast.show{opacity:.94;}
+
+  .hidden-input{display:none;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="view-library" class="view active">
+    <header class="lib-header">
+      <h1>文庫</h1>
+      <div class="header-actions">
+        <button class="icon-btn" id="theme-toggle" title="表示モード">🌓</button>
+        <button class="icon-btn" id="settings-btn" title="設定">⚙</button>
+        <button class="icon-btn" id="add-btn" title="PDFを追加" style="font-size:24px;">＋</button>
+      </div>
+    </header>
+    <div id="shelf" class="shelf"></div>
+    <input type="file" id="file-input" class="hidden-input" accept="application/pdf,.pdf" multiple>
+    <input type="file" id="import-input" class="hidden-input" accept="application/json,.json">
+  </div>
+
+  <div id="view-viewer" class="view">
+    <header class="viewer-header" id="viewer-header">
+      <button class="icon-btn" id="back-btn" title="本棚へ">←</button>
+      <div class="viewer-title" id="viewer-title"></div>
+      <div class="viewer-actions">
+        <button class="icon-btn" id="search-btn" title="検索">🔍</button>
+        <button class="icon-btn" id="spread-btn" title="見開き">📖</button>
+      </div>
+    </header>
+    <div class="page-area" id="page-area">
+      <div class="page-wrap" id="page-wrap"></div>
+      <button class="nav-zone nav-prev" id="nav-prev" aria-label="前へ"></button>
+      <button class="nav-zone nav-next" id="nav-next" aria-label="次へ"></button>
+    </div>
+    <footer class="viewer-footer" id="viewer-footer">
+      <div class="hit-bar" id="hit-bar">
+        <span class="hit-q" id="hit-q"></span>
+        <span class="hit-count" id="hit-count"></span>
+        <button class="icon-btn" id="hit-prev" title="前のヒット">▲</button>
+        <button class="icon-btn" id="hit-next" title="次のヒット">▼</button>
+        <button class="icon-btn" id="hit-clear" title="検索を終わる">×</button>
+      </div>
+      <div class="footer-row">
+        <input type="range" id="page-slider" min="1" max="1" value="1">
+        <div class="page-indicator" id="page-indicator">1 / 1</div>
+      </div>
+    </footer>
+
+    <div class="overlay" id="search-overlay">
+      <div class="search-bar">
+        <button class="icon-btn" id="search-close">×</button>
+        <input type="search" id="search-input" placeholder="このテキスト内を検索" enterkeyhint="search" autocomplete="off">
+      </div>
+      <div class="search-status" id="search-status"></div>
+      <ul class="search-results" id="search-results"></ul>
+    </div>
+  </div>
+
+</div>
+
+<div class="modal-back" id="modal-back">
+  <div class="modal-sheet" id="modal-sheet"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="lib/pdfjs/pdf.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
