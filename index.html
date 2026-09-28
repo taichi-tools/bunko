@@ -126,6 +126,17 @@
   .search-results li .snip b{color:var(--accent-strong); font-weight:700; background:var(--hl);}
   .search-results li .pg-no{font-size:11px; color:var(--ink-soft); margin-top:5px;}
 
+  /* ---------- 目次 ---------- */
+  .toc-head{flex:1; font-family:var(--font-serif); font-weight:700; font-size:17px;}
+  .toc-list, .toc-list ul{list-style:none; margin:0; padding:0;}
+  .toc-list{padding:0 12px calc(16px + var(--safe-bottom)); overflow-y:auto; flex:1; width:100%; max-width:760px; margin:0 auto;}
+  .toc-row{display:flex; align-items:center; gap:4px; padding-top:9px; padding-bottom:9px; padding-right:6px; border-bottom:1px solid var(--border); cursor:pointer; font-size:14px; line-height:1.5; border-radius:4px;}
+  .toc-row.nolink{cursor:default; color:var(--ink-soft);}
+  .toc-row.cur{background:var(--hl); font-weight:700;}
+  .toc-tog{flex:none; width:28px; height:28px; border:none; background:none; color:var(--ink-soft); font-size:13px; padding:0; cursor:pointer;}
+  .toc-tog:disabled{visibility:hidden;}
+  .toc-title{flex:1; word-break:break-all;}
+  .toc-pg{flex:none; min-width:36px; text-align:right; font-size:12px; color:var(--ink-soft); font-variant-numeric:tabular-nums;}
   /* ---------- シート ---------- */
   .modal-back{position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:30; display:none; align-items:flex-end; justify-content:center;}
   .modal-back.active{display:flex;}
@@ -171,6 +182,7 @@
       <button class="icon-btn" id="back-btn" title="本棚へ">←</button>
       <div class="viewer-title" id="viewer-title"></div>
       <div class="viewer-actions">
+        <button class="icon-btn" id="toc-btn" title="目次">☰</button>
         <button class="icon-btn" id="search-btn" title="検索">🔍</button>
         <button class="icon-btn" id="spread-btn" title="見開き">📖</button>
       </div>
@@ -194,8 +206,16 @@
       </div>
     </footer>
 
-    <div class="overlay" id="search-overlay">
+    <div class="overlay" id="toc-overlay">
       <div class="search-bar">
+        <button class="icon-btn" id="toc-close">×</button>
+        <div class="toc-head">目次</div>
+      </div>
+      <div class="search-status" id="toc-status"></div>
+      <ul class="toc-list" id="toc-list"></ul>
+    </div>
+
+    <div class="overlay" id="search-overlay">      <div class="search-bar">
         <button class="icon-btn" id="search-close">×</button>
         <input type="search" id="search-input" placeholder="このテキスト内を検索" enterkeyhint="search" autocomplete="off">
       </div>

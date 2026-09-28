@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = "0.2.2";
+  var APP_VERSION = "0.3.0";
   var INDEX_VERSION = 2;          // 索引の作り方を変えたら上げる(古い索引は作り直す)
   var MAX_HITS = 1000;
 
@@ -175,6 +175,7 @@
   function handleBack(){
     if(modalOpen){ $("modal-back").classList.remove("active"); modalOpen = false; }
     if($("search-overlay").classList.contains("active")){ closeSearchOverlay(); return; }
+    if($("toc-overlay").classList.contains("active")){ $("toc-overlay").classList.remove("active"); return; }
     if($("view-viewer").classList.contains("active")) closeViewer();
   }
   window.addEventListener("popstate", handleBack);
@@ -364,6 +365,7 @@
       currentBook.lastOpenedAt = Date.now();
       currentIndex = (texts && texts.v === INDEX_VERSION) ? texts.pages : null;
       indexPromise = null;
+      outlinePromise = null;
       clearHits();
       $("viewer-title").textContent = meta.title;
       showView("viewer");
@@ -392,7 +394,7 @@
     if(currentBook){ currentBook.lastPage = pageAnchor; dbPut("books", currentBook); }
     cancelRenders();
     if(currentDoc){ currentDoc.destroy(); currentDoc = null; }
-    currentBook = null; currentIndex = null; indexPromise = null;
+    currentBook = null; currentIndex = null; indexPromise = null; outlinePromise = null;
     clearHits();
     setUiHidden(false);
     showView("library");
@@ -506,7 +508,7 @@
   $("nav-next").addEventListener("click", goNext);
   $("nav-prev").addEventListener("click", goPrev);
   document.addEventListener("keydown", function(e){
-    if(!$("view-viewer").classList.contains("active") || $("search-overlay").classList.contains("active")) return;
+    if(!$("view-viewer").classList.contains("active") || $("search-overlay").classList.contains("active") || $("toc-overlay").classList.contains("active")) return;
     if(e.key === "ArrowRight" || e.key === "PageDown") goNext();
     else if(e.key === "ArrowLeft" || e.key === "PageUp") goPrev();
   });
@@ -601,6 +603,125 @@
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(function(){ if(currentDoc) renderPages(); }, 150);
   });
+
+  /* ---------- 目次(PDFに埋め込まれたアウトライン) ---------- */
+  var outlinePromise = null;
+  var tocOverlay = $("toc-overlay"), tocList = $("toc-list"), tocStatus = $("toc-status");
+
+  // アウトラインを {title, page, children, depth} の木にする。page は1始まり(移動先がなければ null)
+  function loadOutline(){
+    if(outlinePromise) return outlinePromise;
+    var doc = currentDoc;
+    outlinePromise = doc.getOutline().then(function(items){
+      var nodes = [];
+      function resolvePage(dest){
+        var p = typeof dest === "string" ? doc.getDestination(dest) : Promise.resolve(dest);
+        return p.then(function(d){
+          if(!Array.isArray(d) || d[0] == null) return null;
+          if(typeof d[0] === "number") return d[0] + 1;
+          return doc.getPageIndex(d[0]).then(function(i){ return i + 1; });
+        }).catch(function(){ return null; });
+      }
+      function build(list, depth){
+        return Promise.all((list || []).map(function(it){
+          return Promise.all([it.dest ? resolvePage(it.dest) : Promise.resolve(null), build(it.items, depth + 1)])
+            .then(function(r){
+              var n = {title: (it.title || "").trim() || "(無題)", page: r[0], children: r[1], depth: depth};
+              return n;
+            });
+        }));
+      }
+      return build(items, 0).then(function(tree){
+        (function walk(list, parent){
+          list.forEach(function(n){ n.parent = parent; n.idx = nodes.length; nodes.push(n); walk(n.children, n); });
+        })(tree, null);
+        return {tree: tree, nodes: nodes};
+      });
+    }).catch(function(err){
+      console.error(err);
+      outlinePromise = null;
+      throw err;
+    });
+    return outlinePromise;
+  }
+
+  // 今の位置: 表示中の最後のページ以前で始まる項目のうち、いちばん後ろのもの
+  function currentTocNode(nodes){
+    var last = pagesShown(pageAnchor, currentDoc.numPages).slice(-1)[0];
+    var best = null;
+    nodes.forEach(function(n){
+      if(n.page != null && n.page <= last && (!best || n.page >= best.page)) best = n;
+    });
+    return best;
+  }
+
+  $("toc-btn").addEventListener("click", function(){
+    if(!currentDoc) return;
+    tocOverlay.classList.add("active");
+    pushUi("toc");
+    tocList.innerHTML = "";
+    tocStatus.textContent = "読み込み中…";
+    loadOutline().then(function(o){
+      if(o.nodes.length === 0){ tocStatus.textContent = "このPDFにはアウトラインがありません"; return; }
+      tocStatus.textContent = "";
+      renderToc(o);
+    }).catch(function(){ tocStatus.textContent = "アウトラインを読み込めませんでした"; });
+  });
+  $("toc-close").addEventListener("click", uiBack);
+
+  function renderToc(o){
+    var cur = currentTocNode(o.nodes);
+    // 最初は2階層目まで開き、今の位置の上の階層も開いておく
+    var open = {};
+    o.nodes.forEach(function(n){ if(n.depth < 1) open[n.idx] = true; });
+    for(var p = cur && cur.parent; p; p = p.parent) open[p.idx] = true;
+
+    var frag = document.createDocumentFragment();
+    var curEl = null;
+    (function add(list, container){
+      list.forEach(function(n){
+        var li = document.createElement("li");
+        var row = document.createElement("div");
+        row.className = "toc-row" + (n === cur ? " cur" : "") + (n.page == null ? " nolink" : "");
+        row.style.paddingLeft = (4 + n.depth * 18) + "px";
+        var tog = document.createElement("button");
+        tog.className = "toc-tog";
+        var title = document.createElement("span");
+        title.className = "toc-title";
+        title.textContent = n.title;
+        var pg = document.createElement("span");
+        pg.className = "toc-pg";
+        pg.textContent = n.page != null ? n.page : "";
+        row.appendChild(tog); row.appendChild(title); row.appendChild(pg);
+        li.appendChild(row);
+        if(n.children.length){
+          var sub = document.createElement("ul");
+          sub.hidden = !open[n.idx];
+          tog.textContent = sub.hidden ? "▸" : "▾";
+          tog.addEventListener("click", function(e){
+            e.stopPropagation();
+            sub.hidden = !sub.hidden;
+            tog.textContent = sub.hidden ? "▸" : "▾";
+          });
+          add(n.children, sub);
+          li.appendChild(sub);
+        } else {
+          tog.disabled = true;
+        }
+        if(n.page != null){
+          row.addEventListener("click", function(){
+            uiBack();
+            setUiHidden(false);
+            goTo(n.page);
+          });
+        }
+        if(n === cur) curEl = row;
+        container.appendChild(li);
+      });
+    })(o.tree, frag);
+    tocList.appendChild(frag);
+    if(curEl) curEl.scrollIntoView({block: "center"});
+  }
 
   /* ---------- 検索 ---------- */
   var searchOverlay = $("search-overlay"), searchInput = $("search-input");
