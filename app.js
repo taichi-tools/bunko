@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = "0.8.2";
+  var APP_VERSION = "0.9.0";
   var INDEX_VERSION = 2;          // 索引の作り方を変えたら上げる(古い索引は作り直す)
   var MAX_HITS = 1000;
 
@@ -1519,10 +1519,46 @@
   }
 
   /* ---------- 起動 ---------- */
-  if("serviceWorker" in navigator && location.protocol !== "file:"){
-    navigator.serviceWorker.register("sw.js").catch(function(err){ console.error(err); });
+  /* 更新のお知らせ
+     新しい版は裏で受け取る。受け取り終えたら画面の下に知らせて、タップでその場で切り替える
+     (以前は「2回開き直す」必要があり、分かりにくかった。2026-09-28 のレビューで指摘)。
+     アプリに戻ってきたときにも、新しい版がないか確かめる。 */
+  var swReg = null;
+  function showUpdateBar(){
+    if($("update-bar")) return;
+    var bar = document.createElement("div");
+    bar.id = "update-bar";
+    bar.innerHTML = '<span>新しい版があります</span><button class="update-go">タップで更新</button><button class="update-x" aria-label="閉じる">×</button>';
+    bar.querySelector(".update-go").addEventListener("click", function(){
+      // 読んでいた本は、読み込み直したあとに開き直す
+      var done = Promise.resolve();
+      if(currentBook){
+        currentBook.lastPage = pageAnchor;
+        try{ sessionStorage.setItem("bunko-reopen", currentBook.id); }catch(e){}
+        done = dbPut("books", currentBook).catch(function(){});
+      }
+      done.then(function(){ location.reload(); });
+    });
+    bar.querySelector(".update-x").addEventListener("click", function(){ bar.remove(); });
+    document.body.appendChild(bar);
   }
-  renderShelf();
+  if("serviceWorker" in navigator && location.protocol !== "file:"){
+    var hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register("sw.js").then(function(reg){ swReg = reg; }).catch(function(err){ console.error(err); });
+    // 新しい版が働き始めた(初めて開いたときは除く)
+    navigator.serviceWorker.addEventListener("controllerchange", function(){
+      if(hadController) showUpdateBar();
+      hadController = true;
+    });
+    document.addEventListener("visibilitychange", function(){
+      if(document.visibilityState === "visible" && swReg) swReg.update().catch(function(){});
+    });
+  }
+  renderShelf().then(function(){
+    var reopen = null;
+    try{ reopen = sessionStorage.getItem("bunko-reopen"); sessionStorage.removeItem("bunko-reopen"); }catch(e){}
+    if(reopen) openBook(reopen);
+  });
 
   // テスト用に内部の関数を出しておく(画面の動作には使わない)
   window.__bunko = {normStr: normStr, buildNorm: buildNorm, findAll: findAll};

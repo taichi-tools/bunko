@@ -192,6 +192,9 @@
 
   .toast{position:fixed; left:50%; bottom:calc(28px + var(--safe-bottom)); transform:translateX(-50%); background:var(--ink); color:var(--bg-page); padding:11px 18px; border-radius:20px; font-size:13px; z-index:40; opacity:0; pointer-events:none; transition:opacity .25s ease; max-width:90vw; text-align:center;}
   .toast.show{opacity:.94;}
+  #update-bar{position:fixed; left:50%; bottom:calc(84px + var(--safe-bottom)); transform:translateX(-50%); z-index:45; display:flex; align-items:center; gap:8px; padding:8px 8px 8px 16px; border-radius:22px; background:var(--ink); color:var(--bg-page); font-size:13px; box-shadow:0 6px 18px rgba(0,0,0,0.3); white-space:nowrap;}
+  #update-bar .update-go{border:none; border-radius:16px; padding:7px 12px; background:var(--accent); color:#fff; font-weight:700; font-size:13px; cursor:pointer;}
+  #update-bar .update-x{border:none; background:none; color:inherit; font-size:16px; padding:4px 6px; cursor:pointer; opacity:.7;}
 
   .hidden-input{display:none;}
 </style>
