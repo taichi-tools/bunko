@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = "0.6.4";
+  var APP_VERSION = "0.7.0";
   var INDEX_VERSION = 2;          // 索引の作り方を変えたら上げる(古い索引は作り直す)
   var MAX_HITS = 1000;
 
@@ -593,6 +593,7 @@
       fitH = baseVp.height * fit;
 
       var frag = document.createDocumentFragment();
+      var boxes = [], minD = dpr;
       var jobs = pageObjs.map(function(page, i){
         var viewport = page.getViewport({scale: scale});
         var box = document.createElement("div");
@@ -601,6 +602,8 @@
         box.style.height = Math.floor(viewport.height) + "px";
         // 大きく拡大したときは、端末のメモリに収まるよう解像度を抑える
         var d = Math.min(dpr, Math.sqrt(MAX_CANVAS_PX / count / (viewport.width * viewport.height)));
+        minD = Math.min(minD, d);
+        boxes.push(box);
         var canvas = document.createElement("canvas");
         canvas.width = Math.floor(viewport.width * d);
         canvas.height = Math.floor(viewport.height * d);
@@ -630,6 +633,59 @@
         renderedZoom = z;
         clampPan();
         applyTransform();
+        renderInfo = {seq: seq, pages: pageObjs, scale: scale, boxes: boxes, dLow: minD < dpr * 0.99, dpr: dpr};
+        scheduleDetail();
+      }).catch(function(err){
+        if(err && err.name === "RenderingCancelledException") return;
+        console.error(err);
+      });
+    });
+  }
+
+  /* 見えている部分だけを高い解像度で重ねて描く
+     ページ全体の画像は、画素数の上限(iPad の Safari は超えると真っ白になる)のため、
+     大きく拡大すると解像度を下げて描いている。止まったあとで、画面に見えている範囲だけを
+     画面の細かさいっぱいで描き、ページ画像と印(ハイライト)の間に重ねる。 */
+  var renderInfo = null, detailTimer = null, detailSeq = 0, detailTasks = [];
+  function scheduleDetail(){
+    clearTimeout(detailTimer);
+    detailTimer = setTimeout(renderDetail, 200);
+  }
+  function renderDetail(){
+    var info = renderInfo;
+    if(!info || info.seq !== renderSeq || !info.dLow) return;
+    if(gesture || zoom !== renderedZoom){ scheduleDetail(); return; }
+    var my = ++detailSeq;
+    detailTasks.forEach(function(t){ try{ t.cancel(); }catch(e){} });
+    detailTasks = [];
+    var ar = pageArea.getBoundingClientRect();
+    var dpr = info.dpr;
+    info.boxes.forEach(function(box, i){
+      var br = box.getBoundingClientRect();
+      var x1 = Math.max(br.left, ar.left), y1 = Math.max(br.top, ar.top);
+      var x2 = Math.min(br.right, ar.right), y2 = Math.min(br.bottom, ar.bottom);
+      var old = box.querySelector("canvas.detail");
+      if(x2 - x1 < 1 || y2 - y1 < 1){ if(old) old.remove(); return; }
+      // ページの中での、見えている範囲(CSS の px)
+      var vx = Math.floor(x1 - br.left), vy = Math.floor(y1 - br.top);
+      var vw = Math.ceil(x2 - br.left) - vx, vh = Math.ceil(y2 - br.top) - vy;
+      var c = document.createElement("canvas");
+      c.className = "detail";
+      c.width = Math.floor(vw * dpr);
+      c.height = Math.floor(vh * dpr);
+      c.style.left = vx + "px"; c.style.top = vy + "px";
+      c.style.width = vw + "px"; c.style.height = vh + "px";
+      var task = info.pages[i].render({
+        canvasContext: c.getContext("2d"),
+        viewport: info.pages[i].getViewport({scale: info.scale}),
+        transform: [dpr, 0, 0, dpr, -vx * dpr, -vy * dpr]
+      });
+      detailTasks.push(task);
+      task.promise.then(function(){
+        if(my !== detailSeq || info.seq !== renderSeq) return;
+        var prev = box.querySelector("canvas.detail");
+        if(prev) prev.remove();
+        box.insertBefore(c, box.querySelector(".hl-layer"));
       }).catch(function(err){
         if(err && err.name === "RenderingCancelledException") return;
         console.error(err);
@@ -807,7 +863,7 @@
       suppressClickUntil = Date.now() + 400;
       if(!isZoomed()) resetZoom();
       if(zoom !== renderedZoom) renderPages();
-      else { clampPan(); applyTransform(); }
+      else { clampPan(); applyTransform(); scheduleDetail(); }
       return;
     }
     gesture = null;
@@ -815,6 +871,7 @@
     var dx = t.clientX - g.x0, dy = t.clientY - g.y0;
     if(g.moved){
       suppressClickUntil = Date.now() + 400;
+      if(isZoomed()) scheduleDetail();
       if(!isZoomed() && Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy)){ if(dx < 0) goNext(); else goPrev(); }
       lastTap = null;
       return;
