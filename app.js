@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = "0.6.2";
+  var APP_VERSION = "0.6.3";
   var INDEX_VERSION = 2;          // 索引の作り方を変えたら上げる(古い索引は作り直す)
   var MAX_HITS = 1000;
 
@@ -572,8 +572,9 @@
     var doc = currentDoc;
     var numPages = doc.numPages;
     var pages = pagesShown(pageAnchor, numPages);
-    var containerW = pageArea.clientWidth - 24;
-    var containerH = pageArea.clientHeight - 16;
+    // 余白は付けず、画面いっぱいまで使う
+    var containerW = pageArea.clientWidth;
+    var containerH = pageArea.clientHeight;
     var count = pages.length, gap = 6;
     var dpr = window.devicePixelRatio || 1;
     var z = zoom;
@@ -841,6 +842,8 @@
     uiHidden = v;
     viewerHeader.classList.toggle("hidden-ui", v);
     viewerFooter.classList.toggle("hidden-ui", v);
+    // 全画面のときは、ページの外の余りを紙と同じ白にして、帯を目立たなくする
+    pageArea.classList.toggle("fullscreen", v);
   }
   pageArea.addEventListener("click", function(e){
     if(e.target.closest(".nav-zone")) return;

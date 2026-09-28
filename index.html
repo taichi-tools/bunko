@@ -107,6 +107,9 @@
 
   .page-area{flex:1; position:relative; overflow:hidden; background:var(--bg-page); display:flex; align-items:center; justify-content:center; touch-action:none;}
   .page-area.zoomed .nav-zone{pointer-events:none;}
+  .page-area{transition:background-color .2s ease;}
+  .page-area.fullscreen{background:#fff;}
+  .page-area.fullscreen .pg{box-shadow:none;}
   .page-wrap{display:flex; gap:6px; align-items:center; justify-content:center; opacity:0; transition:opacity .16s ease;}
   .page-wrap.show{opacity:1;}
   .pg{position:relative; box-shadow:0 3px 14px rgba(0,0,0,0.28); background:#fff;}
