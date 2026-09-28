@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = "0.7.1";
+  var APP_VERSION = "0.8.0";
   var INDEX_VERSION = 2;          // 索引の作り方を変えたら上げる(古い索引は作り直す)
   var MAX_HITS = 1000;
 
@@ -539,6 +539,7 @@
   }
 
   function closeViewer(){
+    setSelectMode(false);
     if(currentBook){ currentBook.lastPage = pageAnchor; dbPut("books", currentBook); }
     cancelRenders();
     if(currentDoc){ currentDoc.destroy(); currentDoc = null; }
@@ -621,6 +622,7 @@
         });
         runningTasks.push(task);
         if(activeQuery) drawHighlights(page, pages[i], viewport, layer, seq);
+        if(selectMode) addTextLayer(page, viewport, box);
         return task.promise;
       });
 
@@ -817,7 +819,7 @@
     return {x: t.clientX - r.left - r.width / 2, y: t.clientY - r.top - r.height / 2};
   }
   pageArea.addEventListener("touchstart", function(e){
-    if(!currentDoc) return;
+    if(!currentDoc || selectMode) return;
     if(e.touches.length === 2){
       var a = areaPoint(e.touches[0]), b = areaPoint(e.touches[1]);
       gesture = {type: "pinch", z0: zoom, px0: panX, py0: panY,
@@ -829,6 +831,7 @@
     }
   }, {passive: false});
   pageArea.addEventListener("touchmove", function(e){
+    if(selectMode) return;
     var g = gesture;
     if(!g) return;
     if(g.type === "pinch" && e.touches.length >= 2){
@@ -855,6 +858,7 @@
     }
   }, {passive: false});
   pageArea.addEventListener("touchend", function(e){
+    if(selectMode) return;
     var g = gesture;
     if(!g) return;
     if(g.type === "pinch"){
@@ -893,6 +897,47 @@
     if(e.touches.length > 1) e.preventDefault();
   }, {passive: false});
 
+  /* ---------- 文字の選択(コピー用) ----------
+     上のバーの「選択」を押している間だけ、ページに文字の層を重ねて、長押し・なぞりで選べるようにする。
+     その間は、めくる・拡大・中央タップの操作を止める(文字を選ぶ指の動きとぶつかるため)。 */
+  var selectMode = false;
+  function addTextLayer(page, viewport, box){
+    var div = document.createElement("div");
+    div.className = "textLayer";
+    div.style.setProperty("--scale-factor", viewport.scale);
+    box.appendChild(div);
+    return page.getTextContent().then(function(tc){
+      return pdfjsLib.renderTextLayer({textContentSource: tc, container: div, viewport: viewport, textDivs: []}).promise;
+    }).catch(function(err){ console.error(err); });
+  }
+  function setSelectMode(v){
+    if(selectMode === v) return;
+    selectMode = v;
+    $("select-btn").classList.toggle("active", v);
+    pageArea.classList.toggle("selecting", v);
+    if(v){
+      var info = renderInfo;
+      if(info && info.seq === renderSeq){
+        info.boxes.forEach(function(box, i){
+          if(!box.querySelector(".textLayer")) addTextLayer(info.pages[i], info.pages[i].getViewport({scale: info.scale}), box);
+        });
+      }
+      toast("文字を長押しして選び、コピーできます");
+    } else {
+      pageWrap.querySelectorAll(".textLayer").forEach(function(d){ d.remove(); });
+      try{ window.getSelection().removeAllRanges(); }catch(e){}
+    }
+  }
+  $("select-btn").addEventListener("click", function(){ setSelectMode(!selectMode); });
+  // コピーするとき、日本語の行の途中の改行(PDFの行の折り返し)を外して、1つの文にする
+  document.addEventListener("copy", function(e){
+    if(!selectMode || !e.clipboardData) return;
+    var text = String(window.getSelection() || "");
+    if(!text) return;
+    e.clipboardData.setData("text/plain", text.replace(/([^\x00-\x7F])\n+(?=[^\x00-\x7F])/g, "$1"));
+    e.preventDefault();
+  });
+
   // 中央タップで UI を隠す
   var uiHidden = false;
   function setUiHidden(v){
@@ -904,6 +949,7 @@
   }
   pageArea.addEventListener("click", function(e){
     if(e.target.closest(".nav-zone")) return;
+    if(selectMode) return;
     if(Date.now() < suppressClickUntil) return;
     setUiHidden(!uiHidden);
   });

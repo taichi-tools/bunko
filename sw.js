@@ -1,5 +1,5 @@
 // build.py が作るファイル。直接書き換えない。
-const CACHE = "bunko-50388fcfc066";
+const CACHE = "bunko-d6199c3d7cb2";
 const FILES = [
   "index.html",
   "app.js",

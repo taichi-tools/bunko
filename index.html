@@ -108,6 +108,15 @@
 
   .page-area{flex:1; position:relative; overflow:hidden; background:var(--bg-page); display:flex; align-items:center; justify-content:center; touch-action:none;}
   .page-area.zoomed .nav-zone{pointer-events:none;}
+  /* 文字の選択モード */
+  .select-btn{font-size:13px; font-weight:700; padding:9px 8px;}
+  .page-area.selecting{touch-action:pan-x pan-y;}
+  .page-area.selecting .nav-zone{pointer-events:none;}
+  .textLayer{position:absolute; inset:0; overflow:hidden; line-height:1; text-align:initial; -webkit-text-size-adjust:none; text-size-adjust:none; forced-color-adjust:none; transform-origin:0 0; z-index:2; -webkit-user-select:text; user-select:text; -webkit-touch-callout:default;}
+  .textLayer span, .textLayer br{color:transparent; position:absolute; white-space:pre; cursor:text; transform-origin:0% 0%;}
+  .textLayer .endOfContent{display:block; position:absolute; inset:100% 0 0; z-index:-1; cursor:default; -webkit-user-select:none; user-select:none;}
+  .textLayer ::selection{background:rgba(0,100,255,0.3);}
+  .textLayer br::selection{background:transparent;}
   .page-area{transition:background-color .2s ease;}
   /* ページの外の色: ライトモードは白(紙の続きに見える)、ダークモードは暗い色(まぶしくない) */
   .page-area{background:var(--page-surround);}
@@ -210,6 +219,7 @@
       <button class="icon-btn" id="back-btn" title="本棚へ">←</button>
       <div class="viewer-title" id="viewer-title"></div>
       <div class="viewer-actions">
+        <button class="icon-btn select-btn" id="select-btn" title="文字を選んでコピー">選択</button>
         <button class="icon-btn" id="toc-btn" title="目次">☰</button>
         <button class="icon-btn" id="search-btn" title="検索">🔍</button>
         <button class="icon-btn" id="spread-btn" title="見開き">📖</button>
