@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = "0.4.4";
+  var APP_VERSION = "0.4.5";
   var INDEX_VERSION = 2;          // 索引の作り方を変えたら上げる(古い索引は作り直す)
   var MAX_HITS = 1000;
 
@@ -1046,7 +1046,6 @@
         '<tr><td>データの保護</td><td>' + (p === true ? '有効' : p === false ? '無効(容量不足のとき消される可能性)' : '不明') + '</td></tr>' +
         '<tr><td>オフライン</td><td>' + (offline ? '準備完了' : '未準備') + '</td></tr>' +
         '<tr><td>バージョン</td><td>' + APP_VERSION + '</td></tr>' +
-        '<tr><td>画面(調査用)</td><td>' + screenInfo() + '</td></tr>' +
         '</table>' +
         '<button class="modal-btn plain block" id="ms-export">バックアップを書き出す</button>' +
         '<button class="modal-btn plain block" id="ms-import">バックアップを読み込む</button>' +
@@ -1059,24 +1058,6 @@
         }
       );
     });
-  }
-
-  // iPad で画面の下に表示されない帯が残る件の調査用(原因が分かったら消す)
-  function screenInfo(){
-    var probe = document.createElement("div");
-    probe.style.cssText = "position:fixed;top:0;left:0;visibility:hidden;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);";
-    document.body.appendChild(probe);
-    var cs = getComputedStyle(probe);
-    var st = parseFloat(cs.paddingTop) || 0, sb = parseFloat(cs.paddingBottom) || 0;
-    probe.remove();
-    var app = $("app").getBoundingClientRect();
-    var vv = window.visualViewport ? Math.round(visualViewport.height) : "-";
-    var mode = (navigator.standalone || matchMedia("(display-mode: standalone)").matches) ? "ホーム画面" : "ブラウザ";
-    return mode + " / 画面 " + screen.width + "×" + screen.height +
-      " / 窓 " + innerWidth + "×" + innerHeight + " / vv " + vv +
-      " / html " + document.documentElement.clientHeight +
-      " / app " + Math.round(app.top) + "–" + Math.round(app.bottom) +
-      " / safe " + st + "," + sb;
   }
 
   function exportBackup(){
