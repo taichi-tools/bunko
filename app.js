@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = "0.5.0";
+  var APP_VERSION = "0.5.1";
   var INDEX_VERSION = 2;          // 索引の作り方を変えたら上げる(古い索引は作り直す)
   var MAX_HITS = 1000;
 
@@ -36,8 +36,18 @@
           if(!db.objectStoreNames.contains(n)) db.createObjectStore(n, {keyPath:"id"});
         });
       };
-      r.onsuccess = function(){ res(r.result); };
+      r.onsuccess = function(){
+        var db = r.result;
+        // 新しい版が保存先の作りを変えようとしたら、こちらは身を引いて開き直す
+        db.onversionchange = function(){ db.close(); location.reload(); };
+        res(db);
+      };
       r.onerror = function(){ dbPromise = null; rej(r.error); };
+      // 古い版がホーム画面のアプリやほかのタブで開いたままだと、保存先の作りを変えられずに止まる
+      r.onblocked = function(){
+        shelf.innerHTML = '<div class="empty-state"><p class="big">古い版が開いたままです</p>' +
+          '<p>ホーム画面のDIGITAL教材と、ほかのタブで開いているDIGITAL教材を<br>すべて閉じてから、開き直してください。</p></div>';
+      };
     });
     return dbPromise;
   }
