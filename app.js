@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = "0.6.3";
+  var APP_VERSION = "0.6.4";
   var INDEX_VERSION = 2;          // 索引の作り方を変えたら上げる(古い索引は作り直す)
   var MAX_HITS = 1000;
 
@@ -842,7 +842,7 @@
     uiHidden = v;
     viewerHeader.classList.toggle("hidden-ui", v);
     viewerFooter.classList.toggle("hidden-ui", v);
-    // 全画面のときは、ページの外の余りを紙と同じ白にして、帯を目立たなくする
+    // 全画面のときは、ページの影を消す
     pageArea.classList.toggle("fullscreen", v);
   }
   pageArea.addEventListener("click", function(e){
