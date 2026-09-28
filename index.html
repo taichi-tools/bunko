@@ -66,8 +66,16 @@
   #view-viewer .viewer-footer{padding-bottom:var(--safe-bottom);}
 
   /* ---------- 本棚 ---------- */
-  .lib-header{display:flex; align-items:baseline; justify-content:space-between; padding:18px 20px;}
-  .lib-header h1{font-family:var(--font-serif); font-weight:700; font-size:23px; margin:0; letter-spacing:.04em;}
+  .lib-header{display:flex; align-items:center; justify-content:space-between; padding:18px 20px;}
+  .lib-header h1{font-family:var(--font-serif); font-weight:700; font-size:23px; margin:0; letter-spacing:.04em; white-space:nowrap;}
+  /* スマホでは、見出しとボタン4つが1行に収まるように詰める */
+  @media (max-width: 480px){
+    .lib-header{padding:14px 12px 14px 16px; gap:8px;}
+    .lib-header h1{font-size:19px; letter-spacing:.02em;}
+    .header-actions{gap:0;}
+    .header-actions .icon-btn{min-width:36px; padding:8px 6px; font-size:18px;}
+    .header-actions #add-btn{font-size:22px !important;}
+  }
   .header-actions{display:flex; gap:4px; align-items:center;}
   .icon-btn{background:none; border:none; color:var(--ink); font-size:19px; line-height:1; padding:9px; border-radius:8px; cursor:pointer; min-width:40px;}
   .icon-btn:active{background:var(--border);}
