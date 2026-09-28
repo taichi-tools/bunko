@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = "0.8.1";
+  var APP_VERSION = "0.8.2";
   var INDEX_VERSION = 2;          // 索引の作り方を変えたら上げる(古い索引は作り直す)
   var MAX_HITS = 1000;
 
@@ -579,6 +579,10 @@
     var count = pages.length, gap = 2;   // 見開きの2ページの間の線の太さ(index.html の .page-wrap の gap と同じにする)
     var dpr = window.devicePixelRatio || 1;
     var z = zoom;
+    // 選択モードで選んでいる範囲は、描き直したあとに選び直す
+    var restoreSel = null;
+    if(selectMode){ restoreSel = pendingSel || saveSelection(); pendingSel = null; }
+    var textJobs = [];
 
     if(!sliderDrag || !sliderDrag.active) sliderSet(pageAnchor, numPages);
     pageIndicator.textContent = (pages.length === 2 ? pages[0] + "–" + pages[1] : pageAnchor) + " / " + numPages;
@@ -599,6 +603,7 @@
         var viewport = page.getViewport({scale: scale});
         var box = document.createElement("div");
         box.className = "pg";
+        box.dataset.page = pages[i];
         box.style.width = Math.floor(viewport.width) + "px";
         box.style.height = Math.floor(viewport.height) + "px";
         // 大きく拡大したときは、端末のメモリに収まるよう解像度を抑える
@@ -622,7 +627,7 @@
         });
         runningTasks.push(task);
         if(activeQuery) drawHighlights(page, pages[i], viewport, layer, seq);
-        if(selectMode) addTextLayer(page, viewport, box);
+        if(selectMode) textJobs.push(addTextLayer(page, viewport, box));
         return task.promise;
       });
 
@@ -637,6 +642,11 @@
         applyTransform();
         renderInfo = {seq: seq, pages: pageObjs, scale: scale, boxes: boxes, dLow: minD < dpr * 0.99, dpr: dpr};
         scheduleDetail();
+        if(restoreSel){
+          Promise.all(textJobs).then(function(){
+            if(seq === renderSeq && selectMode) restoreSelection(restoreSel);
+          });
+        }
       }).catch(function(err){
         if(err && err.name === "RenderingCancelledException") return;
         console.error(err);
@@ -845,6 +855,8 @@
       var a = areaPoint(e.touches[0]), b = areaPoint(e.touches[1]);
       gesture = {type: "pinch", z0: zoom, px0: panX, py0: panY,
         fx: (a.x + b.x) / 2, fy: (a.y + b.y) / 2, d0: Math.hypot(a.x - b.x, a.y - b.y) || 1};
+      // 2本指で触れた時点で端末が選択を外すことがあるので、先に覚えておく
+      if(selectMode) pendingSel = saveSelection() || pendingSel;
       e.preventDefault();
     } else if(e.touches.length === 1 && !gesture){
       var t = e.touches[0];
@@ -903,7 +915,10 @@
       suppressClickUntil = Date.now() + 400;
       if(!isZoomed()) resetZoom();
       if(zoom !== renderedZoom) renderPages();
-      else { clampPan(); applyTransform(); scheduleDetail(); }
+      else {
+        clampPan(); applyTransform(); scheduleDetail();
+        if(pendingSel){ if(!hasSelection()) restoreSelection(pendingSel); pendingSel = null; }
+      }
       return;
     }
     gesture = null;
@@ -970,6 +985,48 @@
     }
   }
   $("select-btn").addEventListener("click", function(){ setSelectMode(!selectMode); });
+
+  // 選んでいる範囲を「どのページの、何番目の文字のかたまりの、何文字目か」で覚える。
+  // 描き直した文字の層は中身も並びも同じなので、同じ番号で選び直せる。
+  var pendingSel = null;
+  function selPoint(node, offset){
+    var el = node.nodeType === 3 ? node.parentNode : node;
+    var span = el && el.closest ? el.closest(".textLayer span") : null;
+    if(!span) return null;
+    var layer = span.closest(".textLayer");
+    var spans = layer.querySelectorAll("span");
+    return {
+      page: layer.parentNode.dataset.page,
+      idx: Array.prototype.indexOf.call(spans, span),
+      off: node.nodeType === 3 ? offset : (offset > 0 ? span.textContent.length : 0)
+    };
+  }
+  function saveSelection(){
+    if(!hasSelection()) return null;
+    var r = window.getSelection().getRangeAt(0);
+    var a = selPoint(r.startContainer, r.startOffset), b = selPoint(r.endContainer, r.endOffset);
+    return (a && b) ? {a: a, b: b} : null;
+  }
+  function selNode(p){
+    var box = pageWrap.querySelector('.pg[data-page="' + p.page + '"]');
+    var layer = box && box.querySelector(".textLayer");
+    var span = layer && layer.querySelectorAll("span")[p.idx];
+    if(!span) return null;
+    var tn = span.firstChild && span.firstChild.nodeType === 3 ? span.firstChild : span;
+    return {node: tn, off: tn === span ? 0 : Math.min(p.off, tn.length)};
+  }
+  function restoreSelection(s){
+    var a = selNode(s.a), b = selNode(s.b);
+    if(!a || !b) return;
+    try{
+      var r = document.createRange();
+      r.setStart(a.node, a.off);
+      r.setEnd(b.node, b.off);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }catch(e){ console.error(e); }
+  }
   // コピーするとき、日本語の行の途中の改行(PDFの行の折り返し)を外して、1つの文にする
   document.addEventListener("copy", function(e){
     if(!selectMode || !e.clipboardData) return;
