@@ -1,5 +1,5 @@
 // build.py が作るファイル。直接書き換えない。
-const CACHE = "bunko-793e1ea29940";
+const CACHE = "bunko-71dbca5d48df";
 const FILES = [
   "index.html",
   "app.js",
@@ -215,6 +215,26 @@ self.addEventListener("activate", (e) => {
 
 self.addEventListener("fetch", (e) => {
   const req = e.request;
+  // Android の共有メニューから受け取ったPDF(manifest の share_target)。
+  // 受け取ったファイルをいったん入れ物「share-inbox」に置き、アプリを ?share=件数 で開き直す(アプリが取り出す)
+  if (req.method === "POST" && new URL(req.url).pathname.endsWith("/share-target")) {
+    e.respondWith((async () => {
+      const scope = self.registration.scope;
+      let n = 0;
+      try {
+        const fd = await req.formData();
+        const files = fd.getAll("file").filter((f) => f && typeof f !== "string" && f.size);
+        const c = await caches.open("share-inbox");
+        for (const k of await c.keys()) await c.delete(k);
+        for (const f of files) {
+          await c.put(new Request(scope + "shared/" + n), new Response(f, {headers: {"Content-Type": f.type || "application/pdf", "X-Name": encodeURIComponent(f.name || "shared.pdf")}}));
+          n++;
+        }
+      } catch (err) { n = 0; }
+      return Response.redirect(scope + "?share=" + n, 303);
+    })());
+    return;
+  }
   if (req.method !== "GET") return;
   if (new URL(req.url).origin !== self.location.origin) return;
   if (req.mode === "navigate") {

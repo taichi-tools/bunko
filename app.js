@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = "0.9.2";
+  var APP_VERSION = "0.10.0";
   var INDEX_VERSION = 2;          // 索引の作り方を変えたら上げる(古い索引は作り直す)
   var MAX_HITS = 1000;
 
@@ -425,7 +425,13 @@
   fileInput.addEventListener("change", function(){
     var files = Array.prototype.slice.call(fileInput.files || []);
     fileInput.value = "";
-    if(files.length === 0) return;
+    addFiles(files);
+  });
+  // PDFを本棚に足す。1冊だけのときは、足したあと(すでにあればその本を)開く(open が true のとき)
+  var lastBookId = null;
+  function addFiles(files, open){
+    if(files.length === 0) return Promise.resolve();
+    lastBookId = null;
     toast("追加しています…", 60000);
     var added = 0, skipped = 0, failed = 0;
     var chain = Promise.resolve();
@@ -436,15 +442,16 @@
         });
       });
     });
-    chain.then(renderShelf).then(function(){
+    return chain.then(renderShelf).then(function(){
       var msg = [];
       if(added) msg.push(added + "冊を追加しました");
       if(skipped) msg.push(skipped + "冊はすでに本棚にあります");
       if(failed) msg.push(failed + "冊は追加できませんでした");
       toast(msg.join("／"), 3500);
       if(added) requestPersist();
+      if(open && files.length === 1 && lastBookId) openBook(lastBookId);
     });
-  });
+  }
 
   function addBookFromFile(file){
     var buf, meta;
@@ -460,7 +467,8 @@
         doc.destroy();
         return dbAll("books");
       }).then(function(books){
-        if(fp && books.some(function(x){ return x.fingerprint === fp; })) return "dup";
+        var same = fp ? books.filter(function(x){ return x.fingerprint === fp; })[0] : null;
+        if(same){ lastBookId = same.id; return "dup"; }
         var title = file.name.replace(/\.pdf$/i, "");
         meta = {
           id: "b_" + Date.now() + "_" + Math.random().toString(36).slice(2,8),
@@ -474,7 +482,7 @@
             t.objectStore("books").put(meta);
             if(cover) t.objectStore("covers").put({id: meta.id, blob: cover});
           });
-        }).then(function(){ return "added"; });
+        }).then(function(){ lastBookId = meta.id; return "added"; });
       });
     }).catch(function(err){
       console.error(err);
@@ -1556,7 +1564,29 @@
       if(document.visibilityState === "visible" && swReg) swReg.update().catch(function(){});
     });
   }
+  // Android の共有メニューから受け取ったPDFを取り出す(sw.js が入れ物「share-inbox」に置き、?share=件数 で開き直す)
+  function takeShared(){
+    if(!/[?&]share=/.test(location.search) || !window.caches) return Promise.resolve([]);
+    try{ window.history.replaceState(null, "", location.pathname); }catch(e){}
+    return caches.open("share-inbox").then(function(c){
+      return c.keys().then(function(keys){
+        keys.sort(function(a, b){ return +a.url.split("/").pop() - +b.url.split("/").pop(); });
+        return Promise.all(keys.map(function(k){
+          return c.match(k).then(function(r){
+            return r.blob().then(function(b){
+              return new File([b], decodeURIComponent(r.headers.get("X-Name") || "shared.pdf"), {type: "application/pdf"});
+            });
+          });
+        })).then(function(files){
+          return Promise.all(keys.map(function(k){ return c.delete(k); })).then(function(){ return files; });
+        });
+      });
+    }).catch(function(err){ console.error(err); return []; });
+  }
   renderShelf().then(function(){
+    return takeShared();
+  }).then(function(shared){
+    if(shared.length){ addFiles(shared, true); return; }
     var reopen = null;
     try{ reopen = sessionStorage.getItem("bunko-reopen"); sessionStorage.removeItem("bunko-reopen"); }catch(e){}
     if(reopen) openBook(reopen);
