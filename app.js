@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = "0.10.0";
+  var APP_VERSION = "0.10.1";
   var INDEX_VERSION = 2;          // 索引の作り方を変えたら上げる(古い索引は作り直す)
   var MAX_HITS = 1000;
 
@@ -100,6 +100,11 @@
     var d = new Date();
     function p(n){ return (n < 10 ? "0" : "") + n; }
     return d.getFullYear() + "-" + p(d.getMonth()+1) + "-" + p(d.getDate());
+  }
+
+  // 捨てる canvas は大きさを0にして、メモリを早く返す(iPad の Safari は、捨てただけでは返さないことがある)
+  function releaseCanvases(el){
+    el.querySelectorAll("canvas").forEach(function(c){ c.width = 0; c.height = 0; });
   }
 
   var modalOpen = false;
@@ -450,6 +455,7 @@
       toast(msg.join("／"), 3500);
       if(added) requestPersist();
       if(open && files.length === 1 && lastBookId) openBook(lastBookId);
+      return failed;
     });
   }
 
@@ -526,6 +532,7 @@
       showView("viewer");
       pushUi("viewer");
       pageWrap.classList.remove("show");
+      releaseCanvases(pageWrap);
       pageWrap.innerHTML = '<div class="load-msg">開いています…</div>';
       pageWrap.classList.add("show");
       if(!file || !meta.numPages){
@@ -642,6 +649,7 @@
       Promise.all(jobs).then(function(){
         if(seq !== renderSeq) return;
         pageWrap.classList.remove("show");
+        releaseCanvases(pageWrap);
         pageWrap.innerHTML = "";
         pageWrap.appendChild(frag);
         pageWrap.classList.add("show");
@@ -659,6 +667,11 @@
         if(err && err.name === "RenderingCancelledException") return;
         console.error(err);
       });
+    }).catch(function(err){
+      if(seq !== renderSeq) return;
+      console.error(err);
+      pageWrap.innerHTML = '<div class="load-msg">このページを読み込めませんでした。</div>';
+      pageWrap.classList.add("show");
     });
   }
 
@@ -704,7 +717,7 @@
       task.promise.then(function(){
         if(my !== detailSeq || info.seq !== renderSeq) return;
         var prev = box.querySelector("canvas.detail");
-        if(prev) prev.remove();
+        if(prev){ prev.width = 0; prev.height = 0; prev.remove(); }
         box.insertBefore(c, box.querySelector(".hl-layer"));
       }).catch(function(err){
         if(err && err.name === "RenderingCancelledException") return;
@@ -1577,16 +1590,20 @@
               return new File([b], decodeURIComponent(r.headers.get("X-Name") || "shared.pdf"), {type: "application/pdf"});
             });
           });
-        })).then(function(files){
-          return Promise.all(keys.map(function(k){ return c.delete(k); })).then(function(){ return files; });
-        });
+        }));
       });
     }).catch(function(err){ console.error(err); return []; });
   }
   renderShelf().then(function(){
     return takeShared();
   }).then(function(shared){
-    if(shared.length){ addFiles(shared, true); return; }
+    if(shared.length){
+      // 追加できなかったものがあれば、入れ物に残す(次の共有で置き換わるまで、失わない)
+      addFiles(shared, true).then(function(failed){
+        if(failed === 0) caches.delete("share-inbox").catch(function(){});
+      });
+      return;
+    }
     var reopen = null;
     try{ reopen = sessionStorage.getItem("bunko-reopen"); sessionStorage.removeItem("bunko-reopen"); }catch(e){}
     if(reopen) openBook(reopen);
