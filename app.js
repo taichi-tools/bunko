@@ -189,7 +189,7 @@
     else handleBack();
   }
   function handleBack(){
-    if(modalOpen){ $("modal-back").classList.remove("active"); modalOpen = false; }
+    if(modalOpen){ $("modal-back").classList.remove("active"); modalOpen = false; return; }
     if($("search-overlay").classList.contains("active")){ closeSearchOverlay(); return; }
     if($("toc-overlay").classList.contains("active")){ $("toc-overlay").classList.remove("active"); return; }
     if($("view-viewer").classList.contains("active")) closeViewer();
@@ -524,6 +524,8 @@
       if(!meta) return;
       currentBook = meta;
       currentBook.lastOpenedAt = Date.now();
+      // 開けなかったときも、閉じるときに別の本のページ番号で上書きしないよう、この本の位置で初期化する
+      pageAnchor = Math.min(Math.max(1, meta.lastPage || 1), meta.numPages || 1);
       currentIndex = (texts && texts.v === INDEX_VERSION) ? texts.pages : null;
       indexPromise = null;
       outlinePromise = null;
@@ -557,6 +559,11 @@
     setSelectMode(false);
     if(currentBook){ currentBook.lastPage = pageAnchor; dbPut("books", currentBook); }
     cancelRenders();
+    // 高精細の描き直しが、閉じたあとに破棄済みの本へ走らないよう止める
+    clearTimeout(detailTimer);
+    detailTasks.forEach(function(t){ try{ t.cancel(); }catch(e){} });
+    detailTasks = [];
+    renderInfo = null; gesture = null;
     if(currentDoc){ currentDoc.destroy(); currentDoc = null; }
     currentBook = null; currentIndex = null; indexPromise = null; outlinePromise = null;
     clearHits();
