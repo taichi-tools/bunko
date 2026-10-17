@@ -1,0 +1,12 @@
+# 公開してはいけないもの・作り直せるものを、commit に入れない(2026-10-13、claude-review の指摘)。
+# 共通の部品 deploy-lib.ps1 の Assert-StagedSafe も、公開の直前に同じようなものを止める。
+__pycache__/
+*.pyc
+*.pdf
+.env*
+*.key
+*.pem
+*.pfx
+*.p12
+*.log
+node_modules/
