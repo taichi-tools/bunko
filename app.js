@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = "0.10.2";
+  var APP_VERSION = "0.10.3";
   var INDEX_VERSION = 2;          // 索引の作り方を変えたら上げる(古い索引は作り直す)
   var MAX_HITS = 1000;
 
@@ -28,7 +28,7 @@
   var dbPromise = null;
   function openDB(){
     if(dbPromise) return dbPromise;
-    dbPromise = new Promise(function(res, rej){
+    var p = dbPromise = new Promise(function(res, rej){
       var r = indexedDB.open(DB_NAME, DB_VER);
       r.onupgradeneeded = function(){
         var db = r.result;
@@ -39,30 +39,56 @@
       r.onsuccess = function(){
         var db = r.result;
         // 新しい版が保存先の作りを変えようとしたら、こちらは身を引いて開き直す
-        db.onversionchange = function(){ db.close(); location.reload(); };
+        db.onversionchange = function(){ db.close(); if(dbPromise === p) dbPromise = null; location.reload(); };
+        // 接続が切れたとき(iPhone で長く裏に回したあとなど)は、この接続を捨てる。次の保存が開き直す(0.10.3)
+        db.onclose = function(){ if(dbPromise === p) dbPromise = null; };
         res(db);
       };
-      r.onerror = function(){ dbPromise = null; rej(r.error); };
+      r.onerror = function(){ if(dbPromise === p) dbPromise = null; rej(r.error); };
       // 古い版がホーム画面のアプリやほかのタブで開いたままだと、保存先の作りを変えられずに止まる
       r.onblocked = function(){
         shelf.innerHTML = '<div class="empty-state"><p class="big">古い版が開いたままです</p>' +
           '<p>ホーム画面のDIGITAL教材と、ほかのタブで開いているDIGITAL教材を<br>すべて閉じてから、開き直してください。</p></div>';
       };
     });
-    return dbPromise;
+    return p;
   }
+  // 失敗したら、接続だけ開き直して一度だけやり直す。書き込みは1つの transaction に全部入れているので、二重にならない。
+  // 容量不足(QuotaExceededError)と、渡した値の複製の失敗(DataCloneError)は、開き直しても直らないのでやり直さない
   function tx(stores, mode, fn){
-    return openDB().then(function(db){
-      return new Promise(function(res, rej){
-        var t = db.transaction(stores, mode);
-        var result;
-        var r = fn(t);
-        if(r) r.onsuccess = function(){ result = r.result; };
-        t.oncomplete = function(){ res(result); };
-        t.onerror = function(){ rej(t.error); };
-        t.onabort = function(){ rej(t.error); };
+    var used = null;
+    function run(){
+      used = openDB();
+      return used.then(function(db){
+        return new Promise(function(res, rej){
+          var t = db.transaction(stores, mode);
+          var result;
+          var r = fn(t);
+          if(r) r.onsuccess = function(){ result = r.result; };
+          t.oncomplete = function(){ res(result); };
+          t.onerror = function(){ rej(t.error); };
+          t.onabort = function(){ rej(t.error); };
+        });
       });
+    }
+    return run().catch(function(err){
+      if(err && (err.name === "QuotaExceededError" || err.name === "DataCloneError")) throw err;
+      if(dbPromise === used){
+        var old = dbPromise; dbPromise = null;
+        old.then(function(d){ try{ d.close(); }catch(e){} }, function(){});
+      }
+      return openDB().then(run, function(){ throw err; });   // 開き直せなければ、元の失敗を返す
     });
+  }
+  // 画面に出せる保存の失敗の案内(.catch の先に置く)。続けて失敗しても、30秒に1回だけ出す
+  var lastDbToast = 0;
+  function dbFail(err){
+    console.error(err);
+    if(Date.now() - lastDbToast < 30000) return;
+    lastDbToast = Date.now();
+    toast(err && err.name === "QuotaExceededError"
+      ? "端末に保存できませんでした(容量が足りません)"
+      : "端末に保存できませんでした。アプリを閉じて開き直してください", 4500);
   }
   function dbGet(s, id){ return tx(s, "readonly", function(t){ return t.objectStore(s).get(id); }); }
   function dbAll(s){ return tx(s, "readonly", function(t){ return t.objectStore(s).getAll(); }); }
@@ -405,7 +431,7 @@
           dbGet("books", b.id).then(function(rec){
             rec.title = v;
             return dbPut("books", rec);
-          }).then(function(){ close(); renderShelf(); toast("名前を変更しました"); });
+          }).then(function(){ close(); renderShelf(); toast("名前を変更しました"); }).catch(function(err){ console.error(err); toast("名前を変更できませんでした。アプリを閉じて開き直してください", 4500); });
         });
       }
     );
@@ -421,7 +447,7 @@
       function(sheet, close){
         sheet.querySelector("#ms-cancel").addEventListener("click", close);
         sheet.querySelector("#ms-del").addEventListener("click", function(){
-          dbDeleteBook(b.id).then(function(){ close(); renderShelf(); toast("削除しました"); });
+          dbDeleteBook(b.id).then(function(){ close(); renderShelf(); toast("削除しました"); }).catch(function(err){ console.error(err); toast("削除できませんでした。アプリを閉じて開き直してください", 4500); });
         });
       }
     );
@@ -557,7 +583,7 @@
 
   function closeViewer(){
     setSelectMode(false);
-    if(currentBook){ currentBook.lastPage = pageAnchor; dbPut("books", currentBook); }
+    if(currentBook){ currentBook.lastPage = pageAnchor; dbPut("books", currentBook).catch(dbFail); }
     cancelRenders();
     // 高精細の描き直しが、閉じたあとに破棄済みの本へ走らないよう止める
     clearTimeout(detailTimer);
@@ -739,7 +765,7 @@
     currentBook.lastPage = pageAnchor;
     var rec = currentBook;
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(function(){ dbPut("books", rec); }, 400);
+    saveTimer = setTimeout(function(){ dbPut("books", rec).catch(dbFail); }, 400);
   }
 
   function goTo(p){
