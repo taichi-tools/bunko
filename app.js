@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = "0.10.3";
+  var APP_VERSION = "0.10.4";
   var INDEX_VERSION = 2;          // 索引の作り方を変えたら上げる(古い索引は作り直す)
   var MAX_HITS = 1000;
 
@@ -1279,7 +1279,9 @@
     searchTimer = setTimeout(function(){ runSearch(searchInput.value); }, 250);
   });
   searchInput.addEventListener("keydown", function(e){
-    if(e.key === "Enter"){ clearTimeout(searchTimer); runSearch(searchInput.value); searchInput.blur(); }
+    // 日本語入力の変換を確定する Enter では、検索も、欄から抜けることもしない(0.10.4)。
+    // Safari は isComposing を正しく返さないことがあるので、変換中の keyCode 229 も見る(Modern Web Guidance「ime-safe-enter-submit」)
+    if(e.key === "Enter" && !(e.isComposing || e.keyCode === 229)){ clearTimeout(searchTimer); runSearch(searchInput.value); searchInput.blur(); }
   });
 
   function runSearch(raw){
