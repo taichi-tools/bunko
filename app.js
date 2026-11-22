@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = "0.10.4";
+  var APP_VERSION = "0.11.0";
   var INDEX_VERSION = 2;          // 索引の作り方を変えたら上げる(古い索引は作り直す)
   var MAX_HITS = 1000;
 
@@ -275,22 +275,37 @@
     }
   }
 
-  /* 書名の頭の「27目標」: 本棚の全部の本が同じ年度のときだけ、表示から外す(本当の書名は変えない)。
-     年度が混ざっているときは、どれがどの年度か分かるように、そのまま出す。 */
+  /* 書名の頭の「27目標」: 年度が付いている本がすべて同じ年度のときだけ、表示から外す(本当の書名は変えない)。
+     異なる年度が混ざったときは、どれがどの年度か分かるように、そのまま出す。
+     年度が付いていない本(補助資料など)が混ざっても、年度付きの本が1種類だけなら隠したままにする。 */
   var YEAR_RE = /^[\s　]*([0-9０-９]{2})[\s　]*目標[\s　_＿\-－・]*/;
   var hiddenYear = null;
   function yearOf(title){
-    var m = title.match(YEAR_RE);
+    var m = String(title || "").match(YEAR_RE);
     return m ? m[1].normalize("NFKC") : null;
   }
-  function updateHiddenYear(books){
-    var y = books.length ? yearOf(books[0].title) : null;
-    hiddenYear = (y && books.every(function(b){ return yearOf(b.title) === y; })) ? y : null;
+  function computeHiddenYear(books){
+    var found = null;
+    for(var i = 0; i < books.length; i++){
+      var y = yearOf(books[i].title);
+      if(!y) continue;
+      if(!found) found = y;
+      else if(found !== y) return null;
+    }
+    return found;
   }
-  function displayTitle(title){
-    if(!hiddenYear) return title;
+  function updateHiddenYear(books){
+    hiddenYear = computeHiddenYear(books);
+  }
+  function displayTitle(title, hy){
+    var y = hy !== undefined ? hy : hiddenYear;
+    if(!y) return title;
     var rest = title.replace(YEAR_RE, "");
     return rest || title;
+  }
+  function bookDisplayTitle(b, hy){
+    if(b && typeof b.displayName === "string" && b.displayName.trim()) return b.displayName.trim();
+    return displayTitle((b && b.title) || "", hy);
   }
 
   /* 本棚の表示: 最近読んだ順 / 科目ごと(右上のボタンで切り替え、端末ごとに覚える) */
@@ -310,10 +325,109 @@
     ["財務会計論", /財務|財表/]
   ];
   function subjectOf(title){
-    var t = title.normalize("NFKC");
+    var t = String(title || "").normalize("NFKC");
     for(var i = 0; i < SUBJECT_RULES.length; i++){ if(SUBJECT_RULES[i][1].test(t)) return SUBJECT_RULES[i][0]; }
     return "その他";
   }
+  function bookSubject(b){
+    if(b && typeof b.subject === "string" && b.subject.trim()) return b.subject.trim();
+    return subjectOf((b && b.title) || "");
+  }
+  function collectCustomSubjects(books){
+    var map = {};
+    (books || []).forEach(function(b){
+      var s = b && typeof b.subject === "string" ? b.subject.trim() : "";
+      if(s && s !== "その他" && SUBJECTS.indexOf(s) === -1) map[s] = true;
+    });
+    return Object.keys(map).sort(function(a, b){
+      return a.normalize("NFKC").localeCompare(b.normalize("NFKC"), "ja", {numeric: true});
+    });
+  }
+  function orderedSubjects(books){
+    return SUBJECTS.concat(collectCustomSubjects(books)).concat(["その他"]);
+  }
+
+  /* タグ: 正規化・集計・複数AND絞り込み */
+  function normalizeTag(raw){
+    return String(raw == null ? "" : raw).trim().replace(/^[#＃]+/, "").trim();
+  }
+  function normalizeTags(list){
+    if(!Array.isArray(list)) return [];
+    var out = [], seen = {};
+    list.forEach(function(raw){
+      var t = normalizeTag(raw);
+      if(!t) return;
+      var k = normStr(t);
+      if(!k || seen[k]) return;
+      seen[k] = true;
+      out.push(t);
+    });
+    return out;
+  }
+  function collectTags(books){
+    var map = {};
+    (books || []).forEach(function(b){
+      normalizeTags(b && b.tags).forEach(function(t){
+        var k = normStr(t);
+        if(!map[k]) map[k] = {name: t, count: 0};
+        map[k].count++;
+      });
+    });
+    return Object.keys(map).map(function(k){ return map[k]; }).sort(function(a, b){
+      return a.name.normalize("NFKC").localeCompare(b.name.normalize("NFKC"), "ja", {numeric: true});
+    });
+  }
+  function filterBooksByTags(books, selectedTags){
+    var sel = normalizeTags(selectedTags);
+    if(!sel.length) return (books || []).slice();
+    var keys = sel.map(normStr);
+    return (books || []).filter(function(b){
+      var bKeys = {};
+      normalizeTags(b && b.tags).forEach(function(t){ bKeys[normStr(t)] = true; });
+      return keys.every(function(k){ return !!bKeys[k]; });
+    });
+  }
+
+  var activeTags = [];
+  function pruneActiveTags(books){
+    if(!activeTags.length) return;
+    var avail = {};
+    collectTags(books).forEach(function(t){ avail[normStr(t.name)] = true; });
+    activeTags = activeTags.filter(function(t){ return !!avail[normStr(t)]; });
+  }
+  function renderFilterBar(){
+    var btn = $("filter-btn");
+    var bar = $("filter-bar");
+    if(btn) btn.classList.toggle("active", activeTags.length > 0);
+    if(!bar) return;
+    bar.innerHTML = "";
+    if(!activeTags.length){ bar.hidden = true; return; }
+    bar.hidden = false;
+    activeTags.forEach(function(t){
+      var pill = document.createElement("button");
+      pill.type = "button";
+      pill.className = "filter-pill";
+      pill.textContent = "#" + t + " ×";
+      pill.title = "タップして絞り込みを外す";
+      pill.addEventListener("click", function(){
+        var k = normStr(t);
+        activeTags = activeTags.filter(function(x){ return normStr(x) !== k; });
+        renderShelf();
+      });
+      bar.appendChild(pill);
+    });
+    var clr = document.createElement("button");
+    clr.type = "button";
+    clr.className = "filter-clear";
+    clr.textContent = "すべて解除";
+    clr.addEventListener("click", function(){
+      activeTags = [];
+      renderShelf();
+    });
+    bar.appendChild(clr);
+  }
+  $("filter-btn").addEventListener("click", openFilterSheet);
+
   var shelfMode = lsGet("bunko-shelf-mode", "recent");
   function updateModeBtn(){
     var b = $("mode-btn");
@@ -332,6 +446,8 @@
     return Promise.all([dbAll("books"), dbAll("covers")]).then(function(r){
       var books = r[0];
       updateHiddenYear(books);
+      pruneActiveTags(books);
+      renderFilterBar();
       var covers = {};
       r[1].forEach(function(c){ covers[c.id] = c.blob; });
       // 最近読んだ順(まだ開いていない本は、追加した順でその後ろ)
@@ -344,6 +460,19 @@
         e.className = "empty-state";
         e.innerHTML = '<p class="big">まだテキストがありません</p><p>右上の「＋」からPDFを追加してください</p>';
         shelf.appendChild(e);
+        return;
+      }
+      var shown = filterBooksByTags(books, activeTags);
+      if(shown.length === 0){
+        var e2 = document.createElement("div");
+        e2.className = "empty-state";
+        e2.innerHTML = '<p class="big">該当するテキストがありません</p><p>選択中のタグすべてに一致する教材はありません</p>' +
+          '<p style="margin-top:14px;"><button type="button" class="modal-btn plain" id="empty-clear-filter" style="flex:none;padding:10px 18px;">絞り込みを解除</button></p>';
+        shelf.appendChild(e2);
+        e2.querySelector("#empty-clear-filter").addEventListener("click", function(){
+          activeTags = [];
+          renderShelf();
+        });
         return;
       }
       var titles = [];
@@ -360,11 +489,11 @@
         var box = el.querySelector(".cover");
         if(covers[b.id]) showCover(box, covers[b.id]);
         else if(b.numPages) backfillCover(b, box);
-        titles.push([el.querySelector(".book-title"), displayTitle(b.title)]);
+        titles.push([el.querySelector(".book-title"), bookDisplayTitle(b)]);
         var pressTimer = null, longPressed = false;
         function startPress(){
           longPressed = false;
-          pressTimer = setTimeout(function(){ longPressed = true; openActionSheet(b); }, 500);
+          pressTimer = setTimeout(function(){ longPressed = true; openBookEditSheet(b.id); }, 500);
         }
         function cancelPress(){ clearTimeout(pressTimer); }
         el.addEventListener("touchstart", startPress, {passive:true});
@@ -378,13 +507,13 @@
         shelf.appendChild(el);
       }
       if(shelfMode === "subject"){
-        // 科目ごと: 科目の見出しの下に、書名の順(テキスト1 → テキスト2 → 問題集)で並べる
+        // 科目ごと: 科目の見出しの下に、表示名の順(テキスト1 → テキスト2 → 問題集)で並べる
         var groups = {};
-        books.forEach(function(b){ var s = subjectOf(b.title); (groups[s] = groups[s] || []).push(b); });
-        SUBJECTS.concat(["その他"]).forEach(function(name){
+        shown.forEach(function(b){ var s = bookSubject(b); (groups[s] = groups[s] || []).push(b); });
+        orderedSubjects(books).forEach(function(name){
           var list = groups[name];
           if(!list) return;
-          list.sort(function(a, b){ return a.title.normalize("NFKC").localeCompare(b.title.normalize("NFKC"), "ja", {numeric: true}); });
+          list.sort(function(a, b){ return bookDisplayTitle(a).normalize("NFKC").localeCompare(bookDisplayTitle(b).normalize("NFKC"), "ja", {numeric: true}); });
           var h = document.createElement("div");
           h.className = "shelf-head";
           h.innerHTML = escapeHtml(name) + '<span>' + list.length + '冊</span>';
@@ -392,62 +521,245 @@
           list.forEach(addBook);
         });
       } else {
-        books.forEach(addBook);
+        shown.forEach(addBook);
       }
       titles.forEach(function(x){ fitTitle(x[0], x[1]); });
     });
   }
 
-  function openActionSheet(b){
-    showModal(
-      '<h2>' + escapeHtml(b.title) + '</h2>' +
-      '<div class="modal-row" style="margin-bottom:10px;">' +
-      '<button class="modal-btn plain" id="ms-rename">名前を変更</button>' +
-      '<button class="modal-btn danger" id="ms-delete">削除</button>' +
-      '</div>' +
-      '<button class="modal-btn plain" id="ms-cancel" style="width:100%;">キャンセル</button>',
-      function(sheet, close){
-        sheet.querySelector("#ms-cancel").addEventListener("click", close);
-        sheet.querySelector("#ms-rename").addEventListener("click", function(){ close(); openRenameSheet(b); });
-        sheet.querySelector("#ms-delete").addEventListener("click", function(){ close(); openDeleteConfirm(b); });
+  function openFilterSheet(){
+    dbAll("books").then(function(books){
+      pruneActiveTags(books);
+      var tags = collectTags(books);
+      if(!tags.length){
+        showModal(
+          '<h2>タグで絞り込む</h2>' +
+          '<p class="note">まだタグが付いている教材はありません。本棚の長押し、または表示中のタイトルをタップしてタグを付けられます。</p>' +
+          '<button type="button" class="modal-btn plain" id="fs-close" style="width:100%;">閉じる</button>',
+          function(sheet, close){
+            sheet.querySelector("#fs-close").addEventListener("click", close);
+          }
+        );
+        return;
       }
-    );
-  }
-  function openRenameSheet(b){
-    showModal(
-      '<h2>名前を変更</h2>' +
-      '<input type="text" id="ms-input" value="' + escapeHtml(b.title) + '">' +
-      '<div class="modal-row">' +
-      '<button class="modal-btn plain" id="ms-cancel">キャンセル</button>' +
-      '<button class="modal-btn primary" id="ms-save">保存</button>' +
-      '</div>',
-      function(sheet, close){
-        var input = sheet.querySelector("#ms-input");
-        input.focus();
-        sheet.querySelector("#ms-cancel").addEventListener("click", close);
-        sheet.querySelector("#ms-save").addEventListener("click", function(){
-          var v = input.value.trim();
-          if(!v){ close(); return; }
-          dbGet("books", b.id).then(function(rec){
-            rec.title = v;
-            return dbPut("books", rec);
-          }).then(function(){ close(); renderShelf(); toast("名前を変更しました"); }).catch(function(err){ console.error(err); toast("名前を変更できませんでした。アプリを閉じて開き直してください", 4500); });
-        });
+      function isSelected(name){
+        var k = normStr(name);
+        return activeTags.some(function(t){ return normStr(t) === k; });
       }
-    );
+      var chipsHtml = tags.map(function(t){
+        return '<button type="button" class="tag-chip' + (isSelected(t.name) ? ' active' : '') + '" data-tag="' + escapeHtml(t.name) + '">' +
+          '#' + escapeHtml(t.name) + '<span>' + t.count + '</span></button>';
+      }).join("");
+      showModal(
+        '<h2>タグで絞り込む（すべて含む）</h2>' +
+        '<p class="note" id="fs-summary"></p>' +
+        '<div class="tag-chips" id="fs-chips">' + chipsHtml + '</div>' +
+        '<div class="modal-row">' +
+        '<button type="button" class="modal-btn plain" id="fs-clear">すべて解除</button>' +
+        '<button type="button" class="modal-btn primary" id="fs-close">閉じる</button>' +
+        '</div>',
+        function(sheet, close){
+          var summary = sheet.querySelector("#fs-summary");
+          var clearBtn = sheet.querySelector("#fs-clear");
+          var chips = sheet.querySelectorAll(".tag-chip");
+          function sync(){
+            var matched = filterBooksByTags(books, activeTags).length;
+            summary.textContent = activeTags.length
+              ? "選択中の " + activeTags.length + "件に一致: " + matched + " / " + books.length + "冊"
+              : "全 " + books.length + "冊を表示中（複数選ぶとすべて含む教材に絞り込めます）";
+            clearBtn.disabled = activeTags.length === 0;
+            chips.forEach(function(ch){
+              ch.classList.toggle("active", isSelected(ch.dataset.tag));
+            });
+          }
+          chips.forEach(function(ch){
+            ch.addEventListener("click", function(){
+              var tag = ch.dataset.tag;
+              var k = normStr(tag);
+              if(isSelected(tag)) activeTags = activeTags.filter(function(t){ return normStr(t) !== k; });
+              else activeTags = activeTags.concat([tag]);
+              sync();
+              renderShelf();
+            });
+          });
+          clearBtn.addEventListener("click", function(){
+            activeTags = [];
+            sync();
+            renderShelf();
+          });
+          sheet.querySelector("#fs-close").addEventListener("click", close);
+          sync();
+        }
+      );
+    }).catch(dbFail);
   }
-  function openDeleteConfirm(b){
+
+  function openBookEditSheet(bookId, opts){
+    dbAll("books").then(function(allBooks){
+      var b = allBooks.filter(function(x){ return x.id === bookId; })[0];
+      if(!b) return;
+      updateHiddenYear(allBooks);
+      var defaultShown = displayTitle(b.title);
+      var initialName = (typeof b.displayName === "string" && b.displayName.trim()) ? b.displayName.trim() : defaultShown;
+      var autoSub = subjectOf(b.title);
+      var curSub = (typeof b.subject === "string" && b.subject.trim()) ? b.subject.trim() : "";
+      var subOptions = '<option value="">自動（判定: ' + escapeHtml(autoSub) + '）</option>' +
+        orderedSubjects(allBooks).map(function(s){
+          return '<option value="' + escapeHtml(s) + '"' + (curSub === s ? ' selected' : '') + '>' + escapeHtml(s) + '</option>';
+        }).join("") +
+        '<option value="__new__">＋ 新しい科目を追加…</option>';
+      var allKnownTags = collectTags(allBooks).map(function(t){ return t.name; });
+      var selectedMap = {};
+      normalizeTags(b.tags).forEach(function(t){ selectedMap[normStr(t)] = t; });
+
+      showModal(
+        '<h2>本の編集</h2>' +
+        '<div class="field-label"><span>表示名</span><button type="button" class="link-btn" id="be-reset-name">元の名前に戻す</button></div>' +
+        '<input type="text" id="be-name" value="' + escapeHtml(initialName) + '">' +
+        '<p class="field-hint">元のファイル名: ' + escapeHtml(b.title) + '</p>' +
+        '<div class="field-label"><span>科目</span></div>' +
+        '<select class="modal-select" id="be-subject">' + subOptions + '</select>' +
+        '<input type="text" id="be-subject-new" placeholder="新しい科目名を入力" style="display:none;">' +
+        '<div class="field-label"><span>タグ</span></div>' +
+        '<div class="tag-chips" id="be-tags"></div>' +
+        '<div class="tag-add-row">' +
+        '<input type="text" id="be-tag-input" placeholder="新しいタグを追加">' +
+        '<button type="button" class="modal-btn plain" id="be-tag-add">追加</button>' +
+        '</div>' +
+        '<div class="modal-row">' +
+        '<button type="button" class="modal-btn plain" id="be-cancel">キャンセル</button>' +
+        '<button type="button" class="modal-btn primary" id="be-save">保存</button>' +
+        '</div>' +
+        '<div class="sheet-danger-zone">' +
+        '<button type="button" class="modal-btn danger-outline" id="be-delete">このテキストを削除</button>' +
+        '</div>',
+        function(sheet, close){
+          var nameInput = sheet.querySelector("#be-name");
+          var resetBtn = sheet.querySelector("#be-reset-name");
+          var subSelect = sheet.querySelector("#be-subject");
+          var subNew = sheet.querySelector("#be-subject-new");
+          var tagsBox = sheet.querySelector("#be-tags");
+          var tagInput = sheet.querySelector("#be-tag-input");
+          var tagAddBtn = sheet.querySelector("#be-tag-add");
+          var resetName = false;
+
+          nameInput.addEventListener("input", function(){ resetName = false; });
+          resetBtn.addEventListener("click", function(){
+            nameInput.value = defaultShown;
+            resetName = true;
+          });
+          subSelect.addEventListener("change", function(){
+            var isNew = subSelect.value === "__new__";
+            subNew.style.display = isNew ? "" : "none";
+            if(isNew) subNew.focus();
+          });
+
+          function renderTagChips(){
+            tagsBox.innerHTML = "";
+            allKnownTags.forEach(function(t){
+              var k = normStr(t);
+              var btn = document.createElement("button");
+              btn.type = "button";
+              btn.className = "tag-chip" + (selectedMap[k] ? " active" : "");
+              btn.textContent = "#" + t;
+              btn.addEventListener("click", function(){
+                if(selectedMap[k]) delete selectedMap[k];
+                else selectedMap[k] = t;
+                renderTagChips();
+              });
+              tagsBox.appendChild(btn);
+            });
+          }
+          function addInputTag(){
+            var t = normalizeTag(tagInput.value);
+            if(!t) return;
+            var k = normStr(t);
+            var existing = allKnownTags.filter(function(x){ return normStr(x) === k; })[0];
+            if(!existing){
+              allKnownTags.push(t);
+              existing = t;
+            }
+            selectedMap[k] = existing;
+            tagInput.value = "";
+            renderTagChips();
+          }
+          renderTagChips();
+          tagAddBtn.addEventListener("click", addInputTag);
+          tagInput.addEventListener("keydown", function(e){
+            if(e.key === "Enter" && !(e.isComposing || e.keyCode === 229)){
+              e.preventDefault();
+              addInputTag();
+            }
+          });
+
+          sheet.querySelector("#be-cancel").addEventListener("click", close);
+          sheet.querySelector("#be-save").addEventListener("click", function(){
+            var subVal = subSelect.value;
+            if(subVal === "__new__"){
+              subVal = subNew.value.trim();
+              if(!subVal){
+                toast("新しい科目名を入力してください");
+                subNew.focus();
+                return;
+              }
+            }
+            addInputTag();
+            var finalTags = normalizeTags(Object.keys(selectedMap).map(function(k){ return selectedMap[k]; }));
+            var v = nameInput.value.trim();
+            var clearName = !v || resetName || (!b.displayName && v === defaultShown);
+            dbGet("books", b.id).then(function(rec){
+              if(!rec) return;
+              if(clearName) delete rec.displayName;
+              else rec.displayName = v;
+              if(!subVal) delete rec.subject;
+              else rec.subject = subVal;
+              if(finalTags.length) rec.tags = finalTags;
+              else delete rec.tags;
+              return dbPut("books", rec).then(function(){
+                if(currentBook && currentBook.id === rec.id){
+                  if(rec.displayName) currentBook.displayName = rec.displayName; else delete currentBook.displayName;
+                  if(rec.subject) currentBook.subject = rec.subject; else delete currentBook.subject;
+                  if(rec.tags) currentBook.tags = rec.tags; else delete currentBook.tags;
+                  $("viewer-title").textContent = bookDisplayTitle(currentBook);
+                }
+              });
+            }).then(function(){
+              close();
+              renderShelf();
+              toast("保存しました");
+            }).catch(dbFail);
+          });
+          sheet.querySelector("#be-delete").addEventListener("click", function(){
+            close();
+            openDeleteConfirm(b, opts);
+          });
+        }
+      );
+    }).catch(dbFail);
+  }
+  function openDeleteConfirm(b, opts){
     showModal(
-      '<h2>「' + escapeHtml(b.title) + '」を削除しますか？</h2>' +
+      '<h2>「' + escapeHtml(bookDisplayTitle(b)) + '」を削除しますか？</h2>' +
       '<p class="note">この操作は取り消せません。</p>' +
       '<div class="modal-row">' +
-      '<button class="modal-btn plain" id="ms-cancel">キャンセル</button>' +
-      '<button class="modal-btn danger" id="ms-del">削除する</button>' +
+      '<button type="button" class="modal-btn plain" id="ms-cancel">キャンセル</button>' +
+      '<button type="button" class="modal-btn danger" id="ms-del">削除する</button>' +
       '</div>',
       function(sheet, close){
         sheet.querySelector("#ms-cancel").addEventListener("click", close);
         sheet.querySelector("#ms-del").addEventListener("click", function(){
-          dbDeleteBook(b.id).then(function(){ close(); renderShelf(); toast("削除しました"); }).catch(function(err){ console.error(err); toast("削除できませんでした。アプリを閉じて開き直してください", 4500); });
+          dbDeleteBook(b.id).then(function(){
+            close();
+            if(currentBook && currentBook.id === b.id){
+              clearTimeout(saveTimer); saveTimer = null;
+              currentBook = null;
+              if(opts && opts.fromViewer) uiBack();
+              else closeViewer();
+            } else {
+              renderShelf();
+            }
+            toast("削除しました");
+          }).catch(function(err){ console.error(err); toast("削除できませんでした。アプリを閉じて開き直してください", 4500); });
         });
       }
     );
@@ -556,7 +868,7 @@
       indexPromise = null;
       outlinePromise = null;
       clearHits();
-      $("viewer-title").textContent = displayTitle(meta.title);
+      $("viewer-title").textContent = bookDisplayTitle(meta);
       showView("viewer");
       pushUi("viewer");
       pageWrap.classList.remove("show");
@@ -583,6 +895,7 @@
 
   function closeViewer(){
     setSelectMode(false);
+    clearTimeout(saveTimer); saveTimer = null;
     if(currentBook){ currentBook.lastPage = pageAnchor; dbPut("books", currentBook).catch(dbFail); }
     cancelRenders();
     // 高精細の描き直しが、閉じたあとに破棄済みの本へ走らないよう止める
@@ -598,6 +911,9 @@
     renderShelf();
   }
   $("back-btn").addEventListener("click", uiBack);
+  $("viewer-title").addEventListener("click", function(){
+    if(currentBook) openBookEditSheet(currentBook.id, {fromViewer: true});
+  });
 
   // 見開きは 1 / 2-3 / 4-5 … の組
   function spreadAnchor(p){ return (p <= 1) ? 1 : (p % 2 === 0 ? p : p - 1); }
@@ -1455,7 +1771,7 @@
         '</table>' +
         '<button class="modal-btn plain block" id="ms-export">バックアップを書き出す</button>' +
         '<button class="modal-btn plain block" id="ms-import">バックアップを読み込む</button>' +
-        '<p class="note">バックアップに入るのは、書名・最後に読んだページ・表示の設定だけです。PDFは入りません。機種変更のときは、新しい端末でPDFを追加し、このファイルを読み込んでください(順番はどちらが先でもかまいません)。</p>' +
+        '<p class="note">バックアップに入るのは、書名・表示名・科目・タグ・最後に読んだページ・表示の設定だけです。PDFは入りません。機種変更のときは、新しい端末でPDFを追加し、このファイルを読み込んでください(順番はどちらが先でもかまいません)。</p>' +
         '<button class="modal-btn plain" id="ms-close" style="width:100%;">閉じる</button>' +
         '<div class="about"><div class="about-name">DIGITAL教材</div>' +
         '<div>バージョン ' + APP_VERSION + '</div>' +
@@ -1469,15 +1785,49 @@
     });
   }
 
+  function prepareBackupBook(b){
+    var out = {
+      fingerprint: b.fingerprint, title: b.title,
+      lastPage: b.lastPage, numPages: b.numPages, size: b.size
+    };
+    if(typeof b.displayName === "string" && b.displayName.trim()) out.displayName = b.displayName.trim();
+    if(typeof b.subject === "string" && b.subject.trim()) out.subject = b.subject.trim();
+    var tags = normalizeTags(b.tags);
+    if(tags.length) out.tags = tags;
+    return out;
+  }
+  function applyBackupFields(target, src){
+    if(!src) return target;
+    if(src.title) target.title = String(src.title);
+    if(src.lastPage){
+      var lp = Math.max(1, src.lastPage | 0);
+      target.lastPage = target.numPages ? Math.min(lp, target.numPages) : lp;
+    }
+    if(typeof src.displayName === "string"){
+      var dn = src.displayName.trim();
+      if(dn) target.displayName = dn;
+      else delete target.displayName;
+    }
+    if(typeof src.subject === "string"){
+      var sub = src.subject.trim();
+      if(sub) target.subject = sub;
+      else delete target.subject;
+    }
+    if(Array.isArray(src.tags)){
+      var tags = normalizeTags(src.tags.filter(function(t){ return typeof t === "string"; }));
+      if(tags.length) target.tags = tags;
+      else delete target.tags;
+    }
+    return target;
+  }
+
   function exportBackup(){
     Promise.all([dbAll("books"), dbGet("kv", "pending")]).then(function(r){
-      var books = r[0].map(function(b){
-        return {fingerprint: b.fingerprint, title: b.title, lastPage: b.lastPage, numPages: b.numPages, size: b.size};
-      });
+      var books = r[0].map(prepareBackupBook);
       // まだPDFを入れていない本の情報も引き継ぐ
       var pend = (r[1] && r[1].items) || [];
       pend.forEach(function(x){
-        if(!books.some(function(b){ return b.fingerprint === x.fingerprint; })) books.push(x);
+        if(!books.some(function(b){ return b.fingerprint === x.fingerprint; })) books.push(prepareBackupBook(x));
       });
       var data = {
         app: "bunko", format: 1, exportedAt: new Date().toISOString(),
@@ -1540,13 +1890,13 @@
         if(!x || !x.fingerprint) return;
         var m = local.filter(function(b){ return b.fingerprint === x.fingerprint; })[0];
         if(m){
-          if(x.title) m.title = String(x.title);
-          if(x.lastPage) m.lastPage = Math.min(Math.max(1, x.lastPage | 0), m.numPages || 1);
+          applyBackupFields(m, x);
+          if(!m.numPages) m.lastPage = 1;
           puts.push(m);
           applied++;
         } else {
           pend = pend.filter(function(p){ return p.fingerprint !== x.fingerprint; });
-          pend.push({fingerprint: x.fingerprint, title: x.title, lastPage: x.lastPage, numPages: x.numPages, size: x.size});
+          pend.push(applyBackupFields({fingerprint: x.fingerprint, numPages: x.numPages, size: x.size}, x));
           waiting++;
         }
       });
@@ -1569,8 +1919,7 @@
       var items = (rec && rec.items) || [];
       var m = items.filter(function(x){ return x.fingerprint === meta.fingerprint; })[0];
       if(!m) return;
-      if(m.title) meta.title = String(m.title);
-      if(m.lastPage) meta.lastPage = Math.min(Math.max(1, m.lastPage | 0), meta.numPages || 1);
+      applyBackupFields(meta, m);
       rec.items = items.filter(function(x){ return x !== m; });
       return dbPut("kv", rec);
     });
@@ -1602,7 +1951,7 @@
   }
   if("serviceWorker" in navigator && location.protocol !== "file:"){
     var hadController = !!navigator.serviceWorker.controller;
-    navigator.serviceWorker.register("sw.js").then(function(reg){ swReg = reg; }).catch(function(err){ console.error(err); });
+    navigator.serviceWorker.register("sw.js").then(function(reg){ swReg = reg; reg.update().catch(function(){}); }).catch(function(err){ console.error(err); });
     // 新しい版が働き始めた(初めて開いたときは除く)
     navigator.serviceWorker.addEventListener("controllerchange", function(){
       if(hadController) showUpdateBar();
@@ -1645,5 +1994,11 @@
   });
 
   // テスト用に内部の関数を出しておく(画面の動作には使わない)
-  window.__bunko = {normStr: normStr, buildNorm: buildNorm, findAll: findAll};
+  window.__bunko = {
+    normStr: normStr, buildNorm: buildNorm, findAll: findAll,
+    yearOf: yearOf, computeHiddenYear: computeHiddenYear, displayTitle: displayTitle, bookDisplayTitle: bookDisplayTitle,
+    subjectOf: subjectOf, bookSubject: bookSubject, collectCustomSubjects: collectCustomSubjects, orderedSubjects: orderedSubjects,
+    normalizeTag: normalizeTag, normalizeTags: normalizeTags, collectTags: collectTags, filterBooksByTags: filterBooksByTags,
+    prepareBackupBook: prepareBackupBook, applyBackupFields: applyBackupFields
+  };
 })();

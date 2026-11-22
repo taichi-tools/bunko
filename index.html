@@ -69,19 +69,26 @@
   /* ---------- 本棚 ---------- */
   .lib-header{display:flex; align-items:center; justify-content:space-between; padding:18px 20px;}
   .lib-header h1{font-family:var(--font-serif); font-weight:700; font-size:23px; margin:0; letter-spacing:.04em; white-space:nowrap;}
-  /* スマホでは、見出しとボタン4つが1行に収まるように詰める */
+  /* スマホでは、見出しとボタン5つが1行に収まるように詰める */
   @media (max-width: 480px){
-    .lib-header{padding:14px 12px 14px 16px; gap:8px;}
-    .lib-header h1{font-size:19px; letter-spacing:.02em;}
+    .lib-header{padding:14px 10px 14px 14px; gap:6px;}
+    .lib-header h1{font-size:18px; letter-spacing:.01em;}
     .header-actions{gap:0;}
-    .header-actions .icon-btn{min-width:36px; padding:8px 6px; font-size:18px;}
-    .header-actions #add-btn{font-size:22px !important;}
+    .header-actions .icon-btn{min-width:32px; padding:8px 4px; font-size:17px;}
+    .header-actions #add-btn{font-size:21px !important;}
+    #filter-btn svg{width:17px; height:17px;}
+    .filter-bar{padding:0 14px 10px;}
   }
   .header-actions{display:flex; gap:4px; align-items:center;}
-  .icon-btn{background:none; border:none; color:var(--ink); font-size:19px; line-height:1; padding:9px; border-radius:8px; cursor:pointer; min-width:40px;}
+  .icon-btn{display:inline-flex; align-items:center; justify-content:center; background:none; border:none; color:var(--ink); font-size:19px; line-height:1; padding:9px; border-radius:8px; cursor:pointer; min-width:40px;}
+  .icon-btn svg{display:block;}
   .icon-btn:active{background:var(--border);}
   .icon-btn.active{background:var(--accent); color:#fff;}
   .icon-btn:disabled{opacity:.35;}
+  .filter-bar{display:flex; align-items:center; gap:6px; padding:0 20px 10px; overflow-x:auto; white-space:nowrap; -webkit-overflow-scrolling:touch;}
+  .filter-bar[hidden]{display:none !important;}
+  .filter-pill{flex:none; display:inline-flex; align-items:center; gap:4px; padding:5px 10px; border-radius:16px; border:1px solid var(--accent); background:var(--accent); color:#fff; font-size:12px; font-weight:700; cursor:pointer;}
+  .filter-clear{flex:none; background:none; border:none; color:var(--ink-soft); font-size:12px; padding:5px 8px; cursor:pointer; text-decoration:underline;}
 
   /* スマホの縦向きで1段に3冊、iPad で6冊前後 */
   .shelf{flex:1; overflow-y:auto; padding:6px 20px 24px; display:grid; grid-template-columns:repeat(auto-fill,minmax(max(96px,15%),1fr)); gap:22px 16px; align-content:start;}
@@ -103,7 +110,8 @@
   /* ---------- ビューア ---------- */
   /* 上下のバーはページの上に重ねる(消したとき、ページが画面いっぱいに見えるように) */
   .viewer-header{position:absolute; top:0; left:0; right:0; display:flex; align-items:center; gap:6px; padding:10px 8px; background:var(--bar-bg); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); border-bottom:1px solid var(--border); z-index:5; transition:transform .2s ease, opacity .2s ease;}
-  .viewer-title{flex:1; text-align:center; font-family:var(--font-serif); font-weight:700; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:0 4px;}
+  .viewer-title{flex:1; text-align:center; font-family:var(--font-serif); font-weight:700; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:6px 8px; border-radius:6px; cursor:pointer;}
+  .viewer-title:active{opacity:.6;}
   .viewer-actions{display:flex; gap:2px;}
 
   .page-area{flex:1; position:relative; overflow:hidden; background:var(--bg-page); display:flex; align-items:center; justify-content:center; touch-action:none;}
@@ -176,7 +184,7 @@
   /* ---------- シート ---------- */
   .modal-back{position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:30; display:none; align-items:flex-end; justify-content:center;}
   .modal-back.active{display:flex;}
-  .modal-sheet{background:var(--bg-elevated); width:100%; max-width:480px; border-radius:16px 16px 0 0; padding:20px 20px calc(20px + var(--safe-bottom)); box-shadow:0 -8px 30px rgba(0,0,0,0.3);}
+  .modal-sheet{background:var(--bg-elevated); width:100%; max-width:480px; max-height:85vh; overflow-y:auto; border-radius:16px 16px 0 0; padding:20px 20px calc(20px + var(--safe-bottom)); box-shadow:0 -8px 30px rgba(0,0,0,0.3);}
   .modal-sheet h2{font-family:var(--font-serif); font-size:17px; margin:0 0 14px;}
   .modal-sheet input[type=text]{width:100%; padding:11px 12px; font-size:16px; border-radius:8px; border:1px solid var(--border); background:var(--bg-page); color:var(--ink); font-family:inherit; margin-bottom:14px;}
   .modal-row{display:flex; gap:10px;}
@@ -185,12 +193,26 @@
   .modal-btn.danger{background:var(--danger); color:#fff;}
   .modal-btn.plain{background:var(--border); color:var(--ink);}
   .modal-btn.block{display:block; width:100%; margin-bottom:10px;}
+  .modal-btn:disabled{opacity:.4; cursor:default;}
   .info-table{width:100%; border-collapse:collapse; font-size:13px; margin:4px 0 16px;}
   .info-table td{padding:7px 0; border-bottom:1px solid var(--border);}
   .info-table td:last-child{text-align:right; color:var(--ink-soft);}
   .about{margin-top:18px; text-align:center; font-size:11px; line-height:1.7; color:var(--ink-soft);}
   .about .about-name{font-family:var(--font-serif); font-weight:700; font-size:14px; color:var(--ink); letter-spacing:.04em;}
   .note{font-size:12px; color:var(--ink-soft); line-height:1.6; margin:-4px 0 14px;}
+  .field-label{display:flex; justify-content:space-between; align-items:baseline; font-size:12px; font-weight:700; color:var(--ink-soft); margin:0 0 6px;}
+  .field-hint{font-size:11px; color:var(--ink-soft); margin:-10px 0 14px; word-break:break-all;}
+  .link-btn{background:none; border:none; color:var(--accent-strong); font-size:12px; font-weight:700; padding:0; cursor:pointer;}
+  .modal-select{width:100%; padding:11px 12px; font-size:16px; border-radius:8px; border:1px solid var(--border); background:var(--bg-page); color:var(--ink); font-family:inherit; margin-bottom:14px;}
+  .tag-chips{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;}
+  .tag-chip{padding:7px 12px; border-radius:18px; border:1px solid var(--border); background:var(--bg-page); color:var(--ink); font-size:13px; cursor:pointer;}
+  .tag-chip.active{background:var(--accent); color:#fff; border-color:var(--accent); font-weight:700;}
+  .tag-chip span{opacity:.75; font-size:11px; margin-left:3px;}
+  .tag-add-row{display:flex; gap:8px; margin-bottom:16px;}
+  .tag-add-row input[type=text]{margin-bottom:0; flex:1;}
+  .tag-add-row .modal-btn{flex:none; padding:11px 16px;}
+  .sheet-danger-zone{margin-top:14px; padding-top:14px; border-top:1px solid var(--border);}
+  .modal-btn.danger-outline{width:100%; background:none; border:1px solid var(--danger); color:var(--danger);}
 
   .toast{position:fixed; left:50%; bottom:calc(28px + var(--safe-bottom)); transform:translateX(-50%); background:var(--ink); color:var(--bg-page); padding:11px 18px; border-radius:20px; font-size:13px; z-index:40; opacity:0; pointer-events:none; transition:opacity .25s ease; max-width:90vw; text-align:center;}
   .toast.show{opacity:.94;}
@@ -208,12 +230,14 @@
     <header class="lib-header">
       <h1>DIGITAL教材</h1>
       <div class="header-actions">
+        <button class="icon-btn" id="filter-btn" title="タグで絞り込む" aria-label="タグで絞り込む"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7.5" cy="7.5" r="1.5" fill="currentColor" stroke="none"/></svg></button>
         <button class="icon-btn" id="theme-toggle" title="表示モード">🌓</button>
         <button class="icon-btn" id="mode-btn" title="科目ごとにする">🗂</button>
         <button class="icon-btn" id="settings-btn" title="設定">⚙</button>
         <button class="icon-btn" id="add-btn" title="PDFを追加" style="font-size:24px;">＋</button>
       </div>
     </header>
+    <div id="filter-bar" class="filter-bar" hidden></div>
     <div id="shelf" class="shelf"></div>
     <input type="file" id="file-input" class="hidden-input" accept="application/pdf,.pdf" multiple>
     <input type="file" id="import-input" class="hidden-input" accept="application/json,.json">
@@ -222,7 +246,7 @@
   <div id="view-viewer" class="view">
     <header class="viewer-header" id="viewer-header">
       <button class="icon-btn" id="back-btn" title="本棚へ">←</button>
-      <div class="viewer-title" id="viewer-title"></div>
+      <div class="viewer-title" id="viewer-title" title="タップして表示名・科目・タグを編集"></div>
       <div class="viewer-actions">
         <button class="icon-btn select-btn" id="select-btn" title="文字を選んでコピー">選択</button>
         <button class="icon-btn" id="toc-btn" title="目次">☰</button>
