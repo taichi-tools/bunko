@@ -85,6 +85,7 @@
   .icon-btn:active{background:var(--border);}
   .icon-btn.active{background:var(--accent); color:#fff;}
   .icon-btn:disabled{opacity:.35;}
+  .icon-btn[hidden]{display:none !important;}
   .filter-bar{display:flex; align-items:center; gap:6px; padding:0 20px 10px; overflow-x:auto; white-space:nowrap; -webkit-overflow-scrolling:touch;}
   .filter-bar[hidden]{display:none !important;}
   .filter-pill{flex:none; display:inline-flex; align-items:center; gap:4px; padding:5px 10px; border-radius:16px; border:1px solid var(--accent); background:var(--accent); color:#fff; font-size:12px; font-weight:700; cursor:pointer;}
@@ -221,9 +222,14 @@
   #update-bar .update-x{border:none; background:none; color:inherit; font-size:16px; padding:4px 6px; cursor:pointer; opacity:.7;}
 
   .hidden-input{display:none;}
+  /* iPad のホーム画面アプリで、上端の文字がぼやける件の直し(2026-10-10。原因は Vault ビューアで特定。ツール開発/Knowledge/ios-pwa-status-bar-gap.md)。
+     上端に、背景色のある「本物の要素」を、画面に固定して置くと、OS が上端の色を読み取り、ぼやけない(実験で確認: 高さ 12px で効き、2px で効かなかった。3〜11px は未確認。
+     中身の下に敷いても、指の操作を受けなくても効く。疑似要素・2px・固定でない(貼り付き含む)ものは効かない)。 */
+  #top-edge { position: fixed; top: 0; left: 0; right: 0; height: 16px; z-index: 0; pointer-events: none; background: var(--bg-page); }
 </style>
 </head>
 <body>
+<div id="top-edge" aria-hidden="true"></div>
 <div id="app">
 
   <div id="view-library" class="view active">
@@ -251,7 +257,8 @@
         <button class="icon-btn select-btn" id="select-btn" title="文字を選んでコピー">選択</button>
         <button class="icon-btn" id="toc-btn" title="目次">☰</button>
         <button class="icon-btn" id="search-btn" title="検索">🔍</button>
-        <button class="icon-btn" id="spread-btn" title="見開き">📖</button>
+        <button class="icon-btn select-btn" id="spread-btn" title="表示切替（自動・見開き・1頁）">自動</button>
+        <button class="icon-btn select-btn" id="cover-btn" title="見開きで1ページ目を表紙として単独表示" hidden>表紙</button>
       </div>
     </header>
     <div class="page-area" id="page-area">

@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  var APP_VERSION = "0.11.1";
+  var APP_VERSION = "0.11.3";
   var INDEX_VERSION = 2;          // 索引の作り方を変えたら上げる(古い索引は作り直す)
   var MAX_HITS = 1000;
 
@@ -847,12 +847,27 @@
   /* ---------- ビューア ---------- */
   var currentBook = null, currentDoc = null, currentIndex = null, indexPromise = null;
   var pageAnchor = 1;
-  var spread = lsGet("bunko-spread", "0") === "1";
+  var rawSpread = lsGet("bunko-spread", "auto");
+  var spreadMode = rawSpread === "1" ? "spread" : (rawSpread === "0" ? "single" : (rawSpread === "spread" || rawSpread === "single" || rawSpread === "auto" ? rawSpread : "auto"));
+  var spreadCover = lsGet("bunko-spread-cover", "1") !== "0";
   var pageWrap = $("page-wrap"), pageArea = $("page-area");
   var pageSlider = $("page-slider"), pageIndicator = $("page-indicator");
   var viewerHeader = $("viewer-header"), viewerFooter = $("viewer-footer");
-  var spreadBtn = $("spread-btn");
-  spreadBtn.classList.toggle("active", spread);
+  var spreadBtn = $("spread-btn"), coverBtn = $("cover-btn");
+  var SPREAD_LABELS = { auto: "自動", spread: "見開き", single: "1頁" };
+  function isSpread(){
+    if(spreadMode === "spread") return true;
+    if(spreadMode === "single") return false;
+    return pageArea.clientWidth >= 700 && pageArea.clientWidth > pageArea.clientHeight;
+  }
+  function updateSpreadUi(){
+    var sp = isSpread();
+    spreadBtn.textContent = SPREAD_LABELS[spreadMode];
+    spreadBtn.classList.toggle("active", spreadMode === "spread" || (spreadMode === "auto" && sp));
+    coverBtn.hidden = !sp;
+    coverBtn.classList.toggle("active", spreadCover);
+  }
+  updateSpreadUi();
 
   // 検索の状態
   var activeQuery = "", activeLabel = "", hits = [], hitCursor = -1;
@@ -884,7 +899,8 @@
         if(currentBook !== meta){ doc.destroy(); return; }
         currentDoc = doc;
         pageAnchor = Math.min(Math.max(1, meta.lastPage || 1), doc.numPages);
-        if(spread) pageAnchor = spreadAnchor(pageAnchor);
+        updateSpreadUi();
+        if(isSpread()) pageAnchor = spreadAnchor(pageAnchor);
         resetZoom();
         renderPages();
       }).catch(function(err){
@@ -916,10 +932,13 @@
     if(currentBook) openBookEditSheet(currentBook.id, {fromViewer: true});
   });
 
-  // 見開きは 1 / 2-3 / 4-5 … の組
-  function spreadAnchor(p){ return (p <= 1) ? 1 : (p % 2 === 0 ? p : p - 1); }
+  // 見開きは 表紙あり: 1 / 2-3 / 4-5 …、表紙なし: 1-2 / 3-4 / 5-6 …
+  function spreadAnchor(p){
+    if(spreadCover) return (p <= 1) ? 1 : (p % 2 === 0 ? p : p - 1);
+    return (p % 2 === 1) ? p : p - 1;
+  }
   function pagesShown(anchor, numPages){
-    if(!spread || anchor <= 1) return [anchor];
+    if(!isSpread() || (spreadCover && anchor <= 1)) return [anchor];
     var arr = [anchor];
     if(anchor + 1 <= numPages) arr.push(anchor + 1);
     return arr;
@@ -1088,20 +1107,22 @@
   function goTo(p){
     if(!currentDoc) return;
     p = Math.min(Math.max(1, p), currentDoc.numPages);
-    pageAnchor = spread ? spreadAnchor(p) : p;
+    pageAnchor = isSpread() ? spreadAnchor(p) : p;
     resetZoom();
     renderPages();
   }
   function goNext(){
     if(!currentDoc) return;
     var n = currentDoc.numPages;
-    if(!spread) goTo(pageAnchor + 1);
-    else goTo(pageAnchor === 1 ? 2 : Math.min(n, pageAnchor + 2));
+    if(!isSpread()) goTo(pageAnchor + 1);
+    else if(spreadCover && pageAnchor === 1) goTo(2);
+    else goTo(Math.min(n, pageAnchor + 2));
   }
   function goPrev(){
     if(!currentDoc) return;
-    if(!spread) goTo(pageAnchor - 1);
-    else goTo(pageAnchor <= 2 ? 1 : pageAnchor - 2);
+    if(!isSpread()) goTo(pageAnchor - 1);
+    else if(spreadCover) goTo(pageAnchor <= 2 ? 1 : pageAnchor - 2);
+    else goTo(pageAnchor - 2);
   }
   $("nav-next").addEventListener("click", goNext);
   $("nav-prev").addEventListener("click", goPrev);
@@ -1111,10 +1132,17 @@
     else if(e.key === "ArrowLeft" || e.key === "PageUp") goPrev();
   });
 
+  var SPREAD_ORDER = ["auto", "spread", "single"];
   spreadBtn.addEventListener("click", function(){
-    spread = !spread;
-    lsSet("bunko-spread", spread ? "1" : "0");
-    spreadBtn.classList.toggle("active", spread);
+    spreadMode = SPREAD_ORDER[(SPREAD_ORDER.indexOf(spreadMode) + 1) % SPREAD_ORDER.length];
+    lsSet("bunko-spread", spreadMode);
+    updateSpreadUi();
+    goTo(pageAnchor);
+  });
+  coverBtn.addEventListener("click", function(){
+    spreadCover = !spreadCover;
+    lsSet("bunko-spread-cover", spreadCover ? "1" : "0");
+    updateSpreadUi();
     goTo(pageAnchor);
   });
 
@@ -1426,7 +1454,7 @@
   var resizeTimer = null;
   window.addEventListener("resize", function(){
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(function(){ if(currentDoc){ resetZoom(); renderPages(); } }, 150);
+    resizeTimer = setTimeout(function(){ if(currentDoc){ updateSpreadUi(); pageAnchor = isSpread() ? spreadAnchor(pageAnchor) : pageAnchor; resetZoom(); renderPages(); } }, 150);
   });
 
   /* ---------- 目次(PDFに埋め込まれたアウトライン) ---------- */
@@ -1832,7 +1860,7 @@
       });
       var data = {
         app: "bunko", format: 1, exportedAt: new Date().toISOString(),
-        settings: {theme: lsGet("bunko-theme", "system"), spread: spread},
+        settings: {theme: lsGet("bunko-theme", "system"), spread: spreadMode, spreadCover: spreadCover},
         books: books
       };
       saveTextFile("bunko-backup-" + today() + ".json", JSON.stringify(data, null, 1));
@@ -1879,9 +1907,15 @@
   function importBackup(data){
     if(data.settings){
       if(data.settings.theme){ lsSet("bunko-theme", data.settings.theme); applyTheme(data.settings.theme); }
-      spread = !!data.settings.spread;
-      lsSet("bunko-spread", spread ? "1" : "0");
-      spreadBtn.classList.toggle("active", spread);
+      if(data.settings.spread === true || data.settings.spread === "spread") spreadMode = "spread";
+      else if(data.settings.spread === false || data.settings.spread === "single") spreadMode = "single";
+      else if(data.settings.spread === "auto") spreadMode = "auto";
+      lsSet("bunko-spread", spreadMode);
+      if(typeof data.settings.spreadCover === "boolean"){
+        spreadCover = data.settings.spreadCover;
+        lsSet("bunko-spread-cover", spreadCover ? "1" : "0");
+      }
+      updateSpreadUi();
     }
     return Promise.all([dbAll("books"), dbGet("kv", "pending")]).then(function(r){
       var local = r[0];
